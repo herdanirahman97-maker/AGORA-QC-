@@ -12,6 +12,7 @@ import json
 import math
 import os
 import textwrap
+import urllib.parse
 import urllib.request
 from xml.sax.saxutils import escape
 
@@ -78,7 +79,7 @@ _DEVICES = [
          items=[_SUHU, _HUM, "Periksa mekanik", "Periksa lampu indikator pada control table", "Periksa brake (rem) tabung x-ray",
                 "Periksa pergerakan cycling pada stand tabung", "Periksa lampu dan tombol pengatur kolimator dan lakukan ekspose",
                 "Periksa kerja Bucky", "Periksa Generator dan lakukan eksposi", _BERSIH, "Periksa brake (rem) pada meja pemeriksaan"]),
-    dict(nama="Mobile", judul="PERALATAN RADIOLOGI DIAGNOSTIK KONVENSIONAL/INTERVENTIONAL MOBILE", kode="RAD 2209.08/00", ruang=None,
+    dict(nama="Mobile", judul="PERALATAN RADIOLOGI DIAGNOSTIK KONVENSIONAL/INTERVENTIONAL MOBILE", kode="RAD 2209.08/00", ruang=None, qr_ruang="X-Ray",
          info=[["Nama Pesawat", "Siemens Polymobil Plus"], ["Tahun Op", "2022"], ["Lokasi", "Siloam Hospitals Agora"],
                ["Type Model", "(240) 10187800"], ["No Seri Tabung", "(21) 24063"], ["Kapasitas Maks.", "125 kV"]],
          items=[_SUHU, _HUM, "Periksa mekanik", "Periksa lampu indikator pada control table",
@@ -155,7 +156,7 @@ QCOLS = ["id", "dibuat", "alat", "tanggal", "petugas", "hasil", "catatan"]
 
 def save_cfg(c):
     """Simpan ruang & staff. Daftar peralatan (devices) tetap dari kode, kecuali sudah ada manual di config.json."""
-    out = {k: c[k] for k in ("rooms", "staff") if k in c}
+    out = {k: c[k] for k in ("rooms", "staff", "base_url") if k in c}
     if os.path.exists(CFG_FILE):
         try:
             with open(CFG_FILE, encoding="utf-8") as f:
@@ -175,7 +176,7 @@ def load_cfg():
         try:
             with open(CFG_FILE, encoding="utf-8") as f:
                 c = json.load(f)
-            for k in ("rooms", "staff", "devices"):
+            for k in ("rooms", "staff", "devices", "base_url"):
                 if c.get(k):
                     cfg[k] = c[k]
         except Exception:
@@ -284,6 +285,45 @@ def qc_get(alat, tgl):
     except Exception:
         hasil = {}
     return dict(petugas=r["petugas"], done=set(k for k, v in hasil.items() if v), catatan=r["catatan"], id=r["id"])
+
+
+# =====================================================================
+# 2b. QR CODE PER RUANGAN
+# =====================================================================
+def default_base_url():
+    cfg = load_cfg()
+    if cfg.get("base_url"):
+        return cfg["base_url"]
+    try:   # alamat aplikasi yang sedang dibuka (Streamlit >= 1.37)
+        host = st.context.headers.get("Host")
+        if host:
+            return ("http://" if host.startswith(("localhost", "127.")) else "https://") + host
+    except Exception:
+        pass
+    return "https://NAMA-APP.streamlit.app"
+
+
+def room_url(base, ruang):
+    return "{}/ruang?ruang={}".format(base.rstrip("/"), urllib.parse.quote(ruang))
+
+
+def room_devices(ruang):
+    """Peralatan yang checklist QC-nya diisi lewat QR ruangan ini."""
+    return [d for d in devices() if (d.get("ruang") or d.get("qr_ruang")) == ruang]
+
+
+def shift_now():
+    h = now().hour
+    return "P" if h < 11 else ("S" if h < 18 else "M")
+
+
+def qr_matrix(text):
+    from reportlab.graphics.barcode.qrencoder import QRCode, QRErrorCorrectLevel
+    q = QRCode(None, QRErrorCorrectLevel.M)
+    q.addData(text)
+    q.make()
+    n = q.getModuleCount()
+    return [[bool(q.isDark(r, c)) for c in range(n)] for r in range(n)]
 
 
 def fnum(v):
@@ -745,6 +785,48 @@ def build_qc_form(dev, y, m, data):
     return sh
 
 
+
+# ---------- LEMBAR QR CODE RUANGAN (stiker, 6 per halaman A4 portrait) ----------
+def build_qr_sheets(base):
+    CW, CH = 240.0, 270.0
+    cards = []
+    for rn in room_names():
+        devs = [d["nama"] for d in room_devices(rn)]
+        cards.append((rn, room_url(base, rn), devs))
+    sheets = []
+    for p0 in range(0, len(cards), 6):
+        chunk = cards[p0:p0 + 6]
+        rows = max(1, math.ceil(len(chunk) / 2))
+        sh = Sheet(2 * CW, rows * CH)
+        for i, (rn, url, devs) in enumerate(chunk):
+            x, y = (i % 2) * CW, (i // 2) * CH
+            sh.rect(x + 3, y + 3, CW - 6, CH - 6, None, "#9e9e9e", 0.6)
+            _logo_into(sh, x + CW / 2 - 50, y + 10, 100, 30)
+            sh.text(x + CW / 2, y + 52, "INSTALASI RADIOLOGI", 8, True, "#555555", "middle")
+            sh.text(x + CW / 2, y + 77, rn, 17 if len(rn) > 12 else 21, True, BLACK, "middle")
+            mat = qr_matrix(url)
+            n = len(mat)
+            size = 128.0
+            qx, qy = x + (CW - size) / 2, y + 90
+            sh.rect(qx - 7, qy - 7, size + 14, size + 14, "#ffffff", "#bdbdbd", 0.5)
+            cell = size / n
+            for r in range(n):   # gabungkan modul gelap berurutan jadi satu persegi panjang
+                c = 0
+                while c < n:
+                    if mat[r][c]:
+                        c2 = c
+                        while c2 + 1 < n and mat[r][c2 + 1]:
+                            c2 += 1
+                        sh.rect(qx + c * cell, qy + r * cell, (c2 - c + 1) * cell, cell, BLACK, None, 0)
+                        c = c2 + 1
+                    else:
+                        c += 1
+            sh.text(x + CW / 2, y + 242, "SCAN UNTUK MENGISI", 9.5, True, BLACK, "middle")
+            sh.text(x + CW / 2, y + 254, "Suhu & Kelembaban" + (" + QC " + ", ".join(devs) if devs else ""), 7, False, "#333333", "middle")
+            sh.text(x + CW / 2, y + 264, url if len(url) < 70 else url[:67] + "...", 4.8, False, "#888888", "middle")
+        sheets.append(sh)
+    return sheets
+
 # ---------- konverter: SVG (preview) & PDF ----------
 def _font_css():
     css = ""
@@ -812,7 +894,7 @@ def _register_lexend():
     return ok["reg"], ok["bold"]
 
 
-def sheets_to_pdf(sheets, title="Formulir Radiologi - Siloam Hospitals Agora"):
+def sheets_to_pdf(sheets, title="Formulir Radiologi - Siloam Hospitals Agora", portrait=False):
     from reportlab.lib.colors import HexColor
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.pdfgen.canvas import Canvas
@@ -822,7 +904,7 @@ def sheets_to_pdf(sheets, title="Formulir Radiologi - Siloam Hospitals Agora"):
     fn_reg = "Lexend" if reg_ok else "Helvetica"
     fn_bold = "Lexend-Bold" if bold_ok else "Helvetica-Bold"
     buf = io.BytesIO()
-    pw, ph = landscape(A4)
+    pw, ph = A4 if portrait else landscape(A4)
     MG = 22.0
     c = Canvas(buf, pagesize=(pw, ph))
     c.setTitle(title)
@@ -920,9 +1002,15 @@ button[kind="primary"]{background:#0b5cab;border-color:#0b5cab}
 """, unsafe_allow_html=True)
 
 
-def header():
+def header(compact=False):
     """Header dengan style inline supaya tidak ditimpa markdown Streamlit."""
     logo = _logo_b64()
+    if compact:   # versi ringkas untuk halaman QR (layar HP)
+        img = "<img src='data:image/png;base64,{}' style='height:34px'>".format(logo) if logo else ""
+        st.markdown("<div style='display:flex;align-items:center;gap:12px;background:#f8f9fb;padding:10px 14px;border-radius:10px;margin-bottom:12px;border:1px solid #e1e5eb'>"
+                    "{}<div><div style='font-size:17px;font-weight:800;color:#0b5cab;letter-spacing:1px'>DIGITAL MONITORING SHAG</div>"
+                    "<div style='font-size:11px;color:#6b7280'>Instalasi Radiologi &middot; Siloam Hospitals Agora</div></div></div>".format(img), unsafe_allow_html=True)
+        return
     img = "<img src='data:image/png;base64,{}' style='height:54px;margin:0 0 14px'>".format(logo) if logo else ""
     st.markdown(
         """
@@ -1113,55 +1201,170 @@ def page_dashboard():
         dash_qc()
 
 
+HARI = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+
+
+def _show_msg(key):
+    msg = st.session_state.pop(key, None)
+    if msg:
+        (st.success if msg[0] == "success" else st.error)(msg[1])
+        if msg[0] == "success":
+            st.toast("Data berhasil disimpan", icon="✅")
+
+
+def _save_th(p, ruang, tgl, shift_key, petugas):
+    ss = st.session_state
+    std = room_std(ruang)
+    suhu, hum = ss.get(p + "_suhu"), ss.get(p + "_hum")
+    temuan = (ss.get(p + "_temuan") or "").strip()
+    tindakan = ss.get(p + "_tindakan") or ""
+    if suhu is None or hum is None:
+        ss[p + "_msg"] = ("error", "Suhu dan kelembaban wajib diisi.")
+        return
+    abn = classify(suhu, std["t_lo"], std["t_hi"]) != "ok" or classify(hum, std["h_lo"], std["h_hi"]) != "ok"
+    if abn and not temuan:
+        ss[p + "_msg"] = ("error", "Kolom Temuan wajib diisi karena suhu/kelembaban di luar batas standar.")
+        return
+    save_entry(ruang=ruang, tanggal=tgl.isoformat(), shift=shift_key, suhu=suhu, kelembapan=hum, petugas=petugas,
+               status="Abnormal" if abn else "Normal", temuan=temuan, tindakan=tindakan if abn else "")
+    ss[p + "_msg"] = ("success", "Tersimpan: {} - {} - {} ({} °C / {} %).{}".format(
+        ruang, tgl.strftime("%d/%m/%Y"), SHIFT_NAME[shift_key], fnum(suhu), fnum(hum), " Segera hubungi teknisi." if abn else ""))
+    for k in ("_suhu", "_hum", "_temuan", "_timpa"):   # kosongkan isian agar tidak tersimpan dobel di jam berikutnya
+        ss.pop(p + k, None)
+
+
+def th_entry_form(ruang, tgl, shift_key, petugas, p):
+    """Isian suhu & kelembaban (dipakai halaman QR dan halaman manual)."""
+    std = room_std(ruang)
+    _show_msg(p + "_msg")
+    c3, c4 = st.columns(2)
+    suhu = c3.number_input("Suhu (°C) [standar {:g}–{:g}] *".format(std["t_lo"], std["t_hi"]), value=None, min_value=0.0, max_value=60.0, step=0.1,
+                           format="%.1f", placeholder="hasil baca termometer", key=p + "_suhu")
+    hum = c4.number_input("Kelembaban (%) [standar {:g}–{:g}] *".format(std["h_lo"], std["h_hi"]), value=None, min_value=0.0, max_value=100.0, step=1.0,
+                          format="%.0f", placeholder="hasil baca higrometer", key=p + "_hum")
+    ts = classify(suhu, std["t_lo"], std["t_hi"]) if suhu is not None else None
+    hs = classify(hum, std["h_lo"], std["h_hi"]) if hum is not None else None
+    if ts:
+        c3.markdown("<div class='hint {}'>{}</div>".format("ok" if ts == "ok" else "bad", "✓ Dalam batas standar" if ts == "ok" else "⚠ {} batas standar ({:g}–{:g} °C)".format("DI ATAS" if ts == "high" else "DI BAWAH", std["t_lo"], std["t_hi"])), unsafe_allow_html=True)
+    if hs:
+        c4.markdown("<div class='hint {}'>{}</div>".format("ok" if hs == "ok" else "bad", "✓ Dalam batas standar" if hs == "ok" else "⚠ {} batas standar ({:g}–{:g} %)".format("DI ATAS" if hs == "high" else "DI BAWAH", std["h_lo"], std["h_hi"])), unsafe_allow_html=True)
+    abn = (ts is not None and ts != "ok") or (hs is not None and hs != "ok")
+    if abn:
+        st.error("Di luar batas normal - segera hubungi teknisi / maintenance.")
+        st.text_area("Temuan ketidaksesuaian * (wajib karena di luar batas standar)", key=p + "_temuan")
+        st.selectbox("Tindakan korektif *", ["Lapor Teknisi AC / Maintenance", "Pengaturan AC / Dehumidifier", "Lainnya"], key=p + "_tindakan")
+    ada = load_entries()
+    dup = len(ada[(ada["ruang"] == ruang) & (ada["tanggal"] == tgl.isoformat()) & (ada["shift"] == shift_key)]) > 0
+    timpa = True
+    if dup:
+        st.warning("Data {} - {} - {} sudah ada.".format(ruang, tgl.strftime("%d/%m/%Y"), SHIFT_NAME[shift_key]))
+        timpa = st.checkbox("Timpa data yang sudah ada", key=p + "_timpa")
+    st.button("Simpan suhu & kelembaban", type="primary", key=p + "_save", disabled=(dup and not timpa),
+              on_click=_save_th, args=(p, ruang, tgl, shift_key, petugas))
+
+
+def _set_all(keys, val):
+    for k in keys:
+        st.session_state[k] = val
+
+
+def _save_qc_cb(pk, alat, tgl, petugas, pairs):
+    ss = st.session_state
+    hasil = {it: True for k, it in pairs if ss.get(k)}
+    catatan = (ss.get(pk + "_cat") or "").strip()
+    if not hasil and not catatan and not any(auto_status(dev_by_name(alat), tgl).values()):
+        ss[pk + "_msg"] = ("error", "Belum ada kegiatan yang dicentang.")
+        return
+    save_qc(alat, tgl.isoformat(), petugas, hasil, catatan)
+    ss[pk + "_msg"] = ("success", "Checklist tersimpan: {} - {} ({} kegiatan dicentang manual).".format(alat, tgl.strftime("%d/%m/%Y"), len(hasil)))
+
+
+def qc_checklist_ui(dev, tgl, petugas, p):
+    """Daftar centang QC 1 alat 1 hari (dipakai halaman QR dan halaman manual)."""
+    alat = dev["nama"]
+    pk = "{}_{}_{}".format(p, alat, tgl.isoformat())
+    _show_msg(pk + "_msg")
+    existing = qc_get(alat, tgl)
+    preset = existing["done"] if existing else set()
+    if existing:
+        st.info("Checklist {} tanggal {} sudah ada (staff {}). Menyimpan akan memperbarui data tersebut.".format(alat, tgl.strftime("%d/%m/%Y"), existing["petugas"] or "-"))
+    auto = auto_status(dev, tgl)
+    pairs = []   # (key, item) untuk kegiatan yang dicentang manual
+    for i, it in enumerate(dev["items"]):
+        if not (dev.get("ruang") and auto_kind(it)):
+            pairs.append(("{}_i{}".format(pk, i), it))
+    keys = [k for k, _ in pairs]
+    b1, b2, _sp = st.columns([1, 1, 2])
+    b1.button("Centang semua", on_click=_set_all, args=(keys, True), key=pk + "_all")
+    b2.button("Kosongkan", on_click=_set_all, args=(keys, False), key=pk + "_none")
+    kmap = dict((it, k) for k, it in pairs)
+    for it in dev["items"]:
+        if it in kmap:
+            k = kmap[it]
+            if k not in st.session_state:
+                st.session_state[k] = it in preset
+            st.checkbox(it, key=k)
+        else:
+            ok = auto[auto_kind(it)]
+            st.markdown("{} {} - <span style='font-size:12px;color:{}'>{}</span>".format(
+                "✅" if ok else "⬜", escape(it), "#2e9e5b" if ok else "#d64545",
+                "terisi otomatis dari data Suhu & Kelembaban ({})".format(escape(dev["ruang"])) if ok else "isi dulu Suhu & Kelembaban ruangan ini"),
+                unsafe_allow_html=True)
+    st.text_area("Catatan / temuan (opsional)", value=existing["catatan"] if existing else "", key=pk + "_cat")
+    st.button("Simpan checklist QC", type="primary", key=pk + "_save", on_click=_save_qc_cb, args=(pk, alat, tgl, petugas, pairs))
+
+
+def page_ruang():
+    """Halaman tujuan QR code: /ruang?ruang=NAMA -> isi suhu & kelembaban + QC untuk ruangan itu."""
+    header(compact=True)
+    names = room_names()
+    qp = st.query_params.get("ruang", "")
+    if isinstance(qp, list):
+        qp = qp[0] if qp else ""
+    if qp in names:
+        ruang = qp
+    else:
+        st.warning("Ruangan '{}' tidak dikenali. Pilih ruangan di bawah.".format(qp)) if qp else st.info("Buka halaman ini dengan scan QR code di ruangan, atau pilih ruangan secara manual.")
+        ruang = st.selectbox("Ruangan *", names, key="qr_pilih")
+    n = now()
+    tgl = n.date()
+    data = month_data(ruang, tgl.year, tgl.month)
+    badges = " &nbsp; ".join("{} {} ({:02d}.00)".format("✅" if (tgl.day, s) in data else "⬜", SHIFT_NAME[s], SHIFT_HOUR[s]) for s in "PSM")
+    st.markdown("<div class='box'><span style='font-size:12px;color:#667'>Ruangan</span><br><span style='font-size:26px;font-weight:700;color:#0b5cab'>{}</span><br>"
+                "<span style='font-size:12px;color:#556'>{}, {} {} {} &middot; {} WIB</span><br><span style='font-size:12px'>Sudah diisi hari ini: {}</span></div>".format(
+                    escape(ruang), HARI[tgl.weekday()], tgl.day, BLN[tgl.month - 1], tgl.year, n.strftime("%H:%M"), badges), unsafe_allow_html=True)
+    petugas = st.selectbox("Nama staff (inisial) *", load_cfg()["staff"], key="qr_petugas")
+    st.markdown("### 1. Suhu & Kelembaban")
+    sk = shift_now()
+    shift_key = st.radio("Jam pemantauan", list(SHIFT_LABEL.keys()), index=list("PSM").index(sk), format_func=lambda k: SHIFT_LABEL[k],
+                         horizontal=True, key="qr_shift_" + sk)
+    th_entry_form(ruang, tgl, shift_key, petugas, "qr")
+    st.markdown("### 2. Checklist QC Peralatan")
+    devs = room_devices(ruang)
+    if not devs:
+        st.caption("Tidak ada checklist QC peralatan untuk ruangan ini.")
+    for dev in devs:
+        with st.expander("{} - {}".format(dev["nama"], dev["kode"]), expanded=(len(devs) == 1)):
+            qc_checklist_ui(dev, tgl, petugas, "qr")
+
+
 def page_input_th():
     header()
-    st.caption("Input suhu & kelembaban harian - {}".format(FORM_CODE_TH))
+    st.caption("Input manual suhu & kelembaban (untuk koreksi / mengisi tanggal sebelumnya) - {}".format(FORM_CODE_TH))
     cfg = load_cfg()
     left, right = st.columns([2.2, 1], gap="large")
     with left:
         ruang = st.selectbox("Ruangan *", room_names(), key="in_ruang")
-        std = room_std(ruang)
         c1, c2 = st.columns(2)
         tgl = c1.date_input("Tanggal pengukuran *", value=TODAY(), max_value=TODAY(), key="in_tgl")
         shift_key = c2.radio("Jam pemantauan *", list(SHIFT_LABEL.keys()), format_func=lambda k: SHIFT_LABEL[k], horizontal=True, key="in_shift")
-        c3, c4 = st.columns(2)
-        suhu = c3.number_input("Suhu (°C) [standar {:g}–{:g}] *".format(std["t_lo"], std["t_hi"]), value=None, min_value=0.0, max_value=60.0, step=0.1,
-                               format="%.1f", placeholder="hasil baca termometer", key="in_suhu")
-        hum = c4.number_input("Kelembaban (%) [standar {:g}–{:g}] *".format(std["h_lo"], std["h_hi"]), value=None, min_value=0.0, max_value=100.0, step=1.0,
-                              format="%.0f", placeholder="hasil baca higrometer", key="in_hum")
-        ts = classify(suhu, std["t_lo"], std["t_hi"]) if suhu is not None else None
-        hs = classify(hum, std["h_lo"], std["h_hi"]) if hum is not None else None
-        if ts:
-            c3.markdown("<div class='hint {}'>{}</div>".format("ok" if ts == "ok" else "bad", "✓ Dalam batas standar" if ts == "ok" else "⚠ {} batas standar ({:g}–{:g} °C)".format("DI ATAS" if ts == "high" else "DI BAWAH", std["t_lo"], std["t_hi"])), unsafe_allow_html=True)
-        if hs:
-            c4.markdown("<div class='hint {}'>{}</div>".format("ok" if hs == "ok" else "bad", "✓ Dalam batas standar" if hs == "ok" else "⚠ {} batas standar ({:g}–{:g} %)".format("DI ATAS" if hs == "high" else "DI BAWAH", std["h_lo"], std["h_hi"])), unsafe_allow_html=True)
         petugas = st.selectbox("Nama staff (inisial) *", cfg["staff"], key="in_petugas")
-        abn = (ts is not None and ts != "ok") or (hs is not None and hs != "ok")
-        temuan, tindakan = "", ""
-        if abn:
-            st.error("Di luar batas normal - segera hubungi teknisi / maintenance.")
-            temuan = st.text_area("Temuan ketidaksesuaian * (wajib karena di luar batas standar)", key="in_temuan")
-            tindakan = st.selectbox("Tindakan korektif *", ["Lapor Teknisi AC / Maintenance", "Pengaturan AC / Dehumidifier", "Lainnya"], key="in_tindakan")
-        ada = load_entries()
-        dup = len(ada[(ada["ruang"] == ruang) & (ada["tanggal"] == tgl.isoformat()) & (ada["shift"] == shift_key)]) > 0
-        timpa = True
-        if dup:
-            st.warning("Data {} - {} - {} sudah ada.".format(ruang, tgl.strftime("%d/%m/%Y"), SHIFT_NAME[shift_key]))
-            timpa = st.checkbox("Timpa data yang sudah ada", key="in_timpa")
-        if st.button("Simpan data suhu & kelembaban", type="primary", key="in_save", disabled=(dup and not timpa)):
-            if suhu is None or hum is None:
-                st.error("Suhu dan kelembaban wajib diisi.")
-            elif abn and not temuan.strip():
-                st.error("Kolom Temuan wajib diisi karena suhu/kelembaban di luar batas standar.")
-            else:
-                save_entry(ruang=ruang, tanggal=tgl.isoformat(), shift=shift_key, suhu=suhu, kelembapan=hum, petugas=petugas,
-                           status="Abnormal" if abn else "Normal", temuan=temuan, tindakan=tindakan)
-                st.success("Data tersimpan: {} - {} - {} ({} °C / {} %).".format(ruang, tgl.strftime("%d/%m/%Y"), SHIFT_NAME[shift_key], fnum(suhu), fnum(hum)))
-                st.toast("Data berhasil disimpan", icon="✅")
+        th_entry_form(ruang, tgl, shift_key, petugas, "in")
     with right:
-        st.markdown("<div class='box'><b>Panduan pengisian</b><br>1. Pilih ruangan, tanggal, dan jam (08.00 · 14.00 · 22.00).<br>2. Isi suhu & kelembaban sesuai hasil baca termometer/higrometer ruangan.<br>3. Pilih inisial staff.<br>"
-                    "4. Bila di luar batas standar, temuan & tindakan korektif wajib diisi dan segera hubungi teknisi - akan tampil di bagian <i>Temuan</i> pada formulir.<br>5. Cek hasilnya di menu Dashboard atau Download.<br>"
-                    "<br>Suhu & kelembaban yang diinput otomatis menandai 2 kegiatan pertama pada checklist QC peralatan terkait.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='box'><b>Panduan pengisian</b><br>Pengisian rutin sebaiknya lewat <b>scan QR code di ruangan</b> (menu Isi Ruangan). Halaman ini untuk koreksi atau mengisi tanggal sebelumnya.<br><br>"
+                    "1. Pilih ruangan, tanggal, dan jam (08.00 · 14.00 · 22.00).<br>2. Isi suhu & kelembaban sesuai hasil baca alat.<br>3. Pilih inisial staff.<br>"
+                    "4. Bila di luar batas standar, temuan & tindakan korektif wajib diisi dan segera hubungi teknisi.<br><br>"
+                    "Suhu & kelembaban yang diinput otomatis menandai 2 kegiatan pertama pada checklist QC peralatan terkait.</div>", unsafe_allow_html=True)
     st.markdown("**Data terakhir - {}**".format(ruang))
     df = load_entries()
     df = df[df["ruang"] == ruang]
@@ -1177,14 +1380,9 @@ def page_input_th():
         st.caption("Belum ada data yang diinput untuk ruangan ini.")
 
 
-def _set_all(keys, val):
-    for k in keys:
-        st.session_state[k] = val
-
-
 def page_input_qc():
     header()
-    st.caption("Input checklist kegiatan pemeliharaan harian peralatan radiologi")
+    st.caption("Input manual checklist QC (untuk koreksi / mengisi tanggal sebelumnya)")
     cfg = load_cfg()
     left, right = st.columns([2.2, 1], gap="large")
     with left:
@@ -1194,50 +1392,18 @@ def page_input_qc():
         tgl = c1.date_input("Tanggal *", value=TODAY(), max_value=TODAY(), key="qi_tgl")
         petugas = c2.selectbox("Nama staff (inisial) *", cfg["staff"], key="qi_petugas")
         st.caption(" · ".join("{}: {}".format(a, b) for a, b in dev["info"][:4]) + "   |   " + dev["kode"])
-        existing = qc_get(alat, tgl)
-        preset = existing["done"] if existing else set()
-        if existing:
-            st.info("Checklist {} tanggal {} sudah ada (staff {}). Menyimpan akan memperbarui data tersebut.".format(alat, tgl.strftime("%d/%m/%Y"), existing["petugas"] or "-"))
-        auto = auto_status(dev, tgl)
-        pairs = []   # (key, item) untuk item yang dicentang manual
-        for i, it in enumerate(dev["items"]):
-            if not (dev.get("ruang") and auto_kind(it)):
-                pairs.append(("qi_{}_{}_{}".format(alat, tgl.isoformat(), i), it))
-        keys = [k for k, _ in pairs]
-        b1, b2, _sp = st.columns([1, 1, 3])
-        b1.button("Centang semua", on_click=_set_all, args=(keys, True), key="qi_all")
-        b2.button("Kosongkan", on_click=_set_all, args=(keys, False), key="qi_none")
-        st.markdown("**Kegiatan harian**")
-        for i, it in enumerate(dev["items"]):
-            if dev.get("ruang") and auto_kind(it):
-                ok = auto[auto_kind(it)]
-                st.markdown("{} {} - <span style='font-size:12px;color:{}'>{}</span>".format(
-                    "✅" if ok else "⬜", escape(it), "#2e9e5b" if ok else "#d64545",
-                    "terisi otomatis dari data Suhu & Kelembaban ({})".format(escape(dev["ruang"])) if ok else "belum ada data Suhu & Kelembaban untuk tanggal ini"),
-                    unsafe_allow_html=True)
-                continue
-        for k, it in pairs:
-            if k not in st.session_state:
-                st.session_state[k] = it in preset
-            st.checkbox(it, key=k)
-        catatan = st.text_area("Catatan / temuan (opsional)", value=existing["catatan"] if existing else "", key="qi_cat_{}_{}".format(alat, tgl.isoformat()))
-        if st.button("Simpan checklist QC", type="primary", key="qi_save"):
-            hasil = {it: True for k, it in pairs if st.session_state.get(k)}
-            if not hasil and not catatan.strip() and not any(auto.values()):
-                st.error("Belum ada kegiatan yang dicentang.")
-            else:
-                save_qc(alat, tgl.isoformat(), petugas, hasil, catatan.strip())
-                st.success("Checklist tersimpan: {} - {} ({} kegiatan dicentang manual).".format(alat, tgl.strftime("%d/%m/%Y"), len(hasil)))
-                st.toast("Checklist berhasil disimpan", icon="✅")
+        qc_checklist_ui(dev, tgl, petugas, "qi")
     with right:
-        st.markdown("<div class='box'><b>Panduan pengisian</b><br>1. Pilih peralatan dan tanggal.<br>2. Centang kegiatan yang sudah dikerjakan (atau pakai <i>Centang semua</i> bila semua selesai).<br>"
-                    "3. <i>Periksa Suhu/Kelembaban ruangan</i> terisi otomatis dari menu Input Suhu & Kelembaban. Alat <i>Mobile</i> tidak terhubung ke ruang tertentu, jadi dicentang manual.<br>"
-                    "4. Tulis catatan bila ada temuan. Catatan tampil di bawah formulir.<br>5. <i>Flat field Test (Mingguan)</i> tidak dihitung sebagai kegiatan harian di dashboard.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='box'><b>Panduan pengisian</b><br>Pengisian rutin lewat <b>scan QR code di ruangan</b> (menu Isi Ruangan).<br><br>1. Pilih peralatan dan tanggal.<br>"
+                    "2. Centang kegiatan yang sudah dikerjakan (atau <i>Centang semua</i>).<br>"
+                    "3. <i>Periksa Suhu/Kelembaban ruangan</i> terisi otomatis dari data Suhu & Kelembaban. Alat <i>Mobile</i> tidak terhubung ke ruang tertentu, jadi dicentang manual.<br>"
+                    "4. Catatan tampil di bawah formulir.<br>5. <i>Flat field Test (Mingguan)</i> tidak dihitung sebagai kegiatan harian di dashboard.</div>", unsafe_allow_html=True)
     st.markdown("**Data terakhir - {}**".format(alat))
     df = load_qc()
     df = df[df["alat"] == alat]
     if len(df):
         df = df.sort_values("id", key=lambda s: s.astype(int), ascending=False).head(15).copy()
+
         def _n(h):
             try:
                 return len([1 for v in json.loads(h).values() if v])
@@ -1254,9 +1420,9 @@ def page_input_qc():
         st.caption("Belum ada checklist yang diinput untuk peralatan ini.")
 
 
-def _preview(sh, key):
+def _preview(sh, key, base_px=1400):
     zoom = st.slider("Zoom preview (%)", 60, 200, 100, 10, key=key)
-    wpx = int(1400 * zoom / 100)
+    wpx = int(base_px * zoom / 100)
     components.html("<div style='overflow:auto;background:#fff;border:1px solid #d5dbe3'>{}</div>".format(sheet_to_svg(sh, wpx)),
                     height=int(wpx * sh.height / sh.width) + 30, scrolling=True)
 
@@ -1264,7 +1430,7 @@ def _preview(sh, key):
 def page_download():
     header()
     st.caption("Download formulir resmi (PDF A4 landscape) dan data (CSV)")
-    t1, t2 = st.tabs(["🌡️ Form Suhu & Kelembaban", "🛠️ Form Checklist QC Peralatan"])
+    t1, t2, t3 = st.tabs(["🌡️ Form Suhu & Kelembaban", "🛠️ Form Checklist QC Peralatan", "🔳 QR Code Ruangan"])
     with t1:
         ruang, m, y = filter_bar("dl", room_names(), "Ruangan")
         sh = build_th_form(ruang, y, m, month_data(ruang, y, m))
@@ -1306,6 +1472,30 @@ def page_download():
                           "Belum dikerjakan": "; ".join(i for i in dev["items"] if i not in e["done"] and is_daily(i)), "Catatan": e["catatan"]})
         q3.download_button("⬇️ Data (CSV)", pd.DataFrame(rows2).to_csv(index=False).encode("utf-8-sig"), fname2 + ".csv", "text/csv", key="dq_csv")
         st.caption("Format mengikuti {} - centang = kegiatan selesai. Kegiatan suhu & kelembaban terisi otomatis dari data ruang terkait.".format(dev["kode"]))
+    with t3:
+        download_qr_tab()
+
+
+
+
+def download_qr_tab():
+    st.markdown("**QR Code per ruangan** - scan membuka halaman pengisian Suhu & Kelembaban + Checklist QC untuk ruangan tersebut ({} ruangan).".format(len(room_names())))
+    base = st.text_input("Alamat aplikasi (URL Streamlit)", value=default_base_url(), key="qr_base").strip()
+    if "NAMA-APP" in base or not base.startswith("http"):
+        st.warning("Ganti dengan alamat asli aplikasi Anda, mis. https://shag-radiologi.streamlit.app, lalu cetak QR. Jangan cetak sebelum alamatnya benar.")
+    if st.button("Simpan alamat ini", key="qr_base_save"):
+        cfg = load_cfg()
+        cfg["base_url"] = base.rstrip("/")
+        save_cfg(cfg)
+        st.success("Alamat disimpan.")
+    sheets = build_qr_sheets(base)
+    _preview(sheets[0], "qr_zoom", 600)
+    st.download_button("⬇️ PDF stiker QR (semua ruangan, A4)", sheets_to_pdf(sheets, "QR Code Ruangan - Siloam Hospitals Agora", portrait=True),
+                       "QR_Ruangan_SHAG.pdf", "application/pdf", key="qr_pdf")
+    st.dataframe(pd.DataFrame([{"Ruangan": r, "Checklist QC": ", ".join(d["nama"] for d in room_devices(r)) or "-", "Link": room_url(base, r)} for r in room_names()]),
+                 hide_index=True)
+    st.caption("Cetak, laminating, tempel di dekat termometer/higrometer. Link bisa diuji dengan membuka salah satu alamat di tabel. "
+               "Untuk MRI, tempel QR di luar Zona IV (pintu/ruang kontrol) - HP tidak boleh masuk ruang magnet.")
 
 
 # =====================================================================
@@ -1313,9 +1503,10 @@ def page_download():
 # =====================================================================
 pg = st.navigation([
     st.Page(page_dashboard, title="1. Dashboard", icon="📊", url_path="dashboard", default=True),
-    st.Page(page_input_th, title="2. Input Suhu & Kelembaban", icon="🌡️", url_path="input-suhu"),
-    st.Page(page_input_qc, title="3. Input QC Peralatan", icon="🛠️", url_path="input-qc"),
-    st.Page(page_download, title="4. Download Formulir", icon="⬇️", url_path="download"),
+    st.Page(page_ruang, title="2. Isi Ruangan (QR)", icon="🔳", url_path="ruang"),
+    st.Page(page_input_th, title="3. Input Suhu (manual)", icon="🌡️", url_path="input-suhu"),
+    st.Page(page_input_qc, title="4. Input QC (manual)", icon="🛠️", url_path="input-qc"),
+    st.Page(page_download, title="5. Download & QR", icon="⬇️", url_path="download"),
 ])
 
 with st.sidebar:
