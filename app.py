@@ -1,0 +1,1360 @@
+# -*- coding: utf-8 -*-
+"""
+DIGITAL MONITORING SHAG - Siloam Hospitals Agora | Instalasi Radiologi
+  1) Pemeriksaan Harian Suhu & Kelembaban Ruang Radiology  (SHKL 2205.11/2)
+  2) Checklist Kegiatan Pemeliharaan Peralatan Radiologi    (RAD 2209.xx/00)
+"""
+import base64
+import calendar
+import datetime as dt
+import io
+import json
+import math
+import os
+import textwrap
+import urllib.request
+from xml.sax.saxutils import escape
+
+import pandas as pd
+import streamlit as st
+import streamlit.components.v1 as components
+
+st.set_page_config(
+    page_title="Radiologi - Siloam Hospitals Agora",
+    page_icon="🏥",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# =====================================================================
+# 0. KONFIGURASI UTAMA (aman diubah)
+# =====================================================================
+HOSPITAL = "Siloam Hospitals"
+SITE = "AGORA"
+DEPT_LINE = "INSTALASI RADIOLOGI SILOAM HOSPITALS AGORA"
+FORM_CODE_TH = "SHKL 2205.11/2"          # kode form suhu & kelembaban (sesuai gambar template)
+TZ = dt.timezone(dt.timedelta(hours=7))  # WIB. Streamlit Cloud berjalan di UTC, jadi zona waktu dipaksa ke WIB
+QC_DUE_HOUR = 17                         # checklist QC hari ini dianggap "jatuh tempo" setelah jam ini
+
+DATA_DIR = "data_shag"
+ENTRY_FILE = os.path.join(DATA_DIR, "entries.csv")
+QC_FILE = os.path.join(DATA_DIR, "qc_entries.csv")
+CFG_FILE = os.path.join(DATA_DIR, "config.json")
+LOGO_FILE = "Siloam Logo.png"
+FONT_REG = "Lexend-Regular.ttf"
+FONT_BOLD = "Lexend-Bold.ttf"
+os.makedirs(DATA_DIR, exist_ok=True)
+
+FONT_URLS = {
+    FONT_REG: [
+        "https://github.com/google/fonts/raw/main/ofl/lexend/static/Lexend-Regular.ttf",
+        "https://raw.githubusercontent.com/google/fonts/main/ofl/lexend/static/Lexend-Regular.ttf",
+    ],
+    FONT_BOLD: [
+        "https://github.com/google/fonts/raw/main/ofl/lexend/static/Lexend-Bold.ttf",
+        "https://raw.githubusercontent.com/google/fonts/main/ofl/lexend/static/Lexend-Bold.ttf",
+    ],
+}
+
+BLN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+SHIFT_NAME = {"P": "Pagi", "S": "Siang", "M": "Malam"}
+SHIFT_LABEL = {"P": "P - Pagi (08.00)", "S": "S - Siang (14.00)", "M": "M - Malam (22.00)"}
+SHIFT_HOUR = {"P": 8, "S": 14, "M": 22}
+
+# Ruang + batas (sesuai template Excel FORM-SHG-KL-11). Suhu semua ruang 20-24 C.
+_ROOMS = [("Mammography", 30, 75), ("USG", 30, 80), ("Dental Panoramik", 40, 55), ("X-Ray", 20, 75),
+          ("Fluoroskopi", 20, 75), ("CT Scan", 50, 60), ("Panel CT Scan", 50, 60), ("MRI", 30, 70),
+          ("Panel MRI", 30, 70), ("Lemari Alkes", 30, 70)]
+
+_SUHU = "Periksa Suhu ruangan"
+_HUM = "Periksa Kelembaban ruangan"
+_BERSIH = "Periksa kebersihan peralatan dan ruangan"
+
+# Peralatan + kegiatan harian (sesuai template Excel RAD 2209.xx/00)
+_DEVICES = [
+    dict(nama="Konvensional", judul="PERALATAN RADIOLOGI DIAGNOSTIK KONVENSIONAL", kode="RAD 2209.07/00", ruang="X-Ray",
+         info=[["Nama Pesawat", "GE XR6000"], ["Tahun Op", "2022"], ["Lokasi", "Siloam Hospitals Agora"], ["Type Model", "XR 6000"],
+               ["No Seri Tabung", "210182HL2"], ["Kapasitas Maks.", "150 kV"]],
+         items=[_SUHU, _HUM, "Periksa mekanik", "Periksa lampu indikator pada control table", "Periksa brake (rem) tabung x-ray",
+                "Periksa pergerakan cycling pada stand tabung", "Periksa lampu dan tombol pengatur kolimator dan lakukan ekspose",
+                "Periksa kerja Bucky", "Periksa Generator dan lakukan eksposi", _BERSIH, "Periksa brake (rem) pada meja pemeriksaan"]),
+    dict(nama="Mobile", judul="PERALATAN RADIOLOGI DIAGNOSTIK KONVENSIONAL/INTERVENTIONAL MOBILE", kode="RAD 2209.08/00", ruang=None,
+         info=[["Nama Pesawat", "Siemens Polymobil Plus"], ["Tahun Op", "2022"], ["Lokasi", "Siloam Hospitals Agora"],
+               ["Type Model", "(240) 10187800"], ["No Seri Tabung", "(21) 24063"], ["Kapasitas Maks.", "125 kV"]],
+         items=[_SUHU, _HUM, "Periksa mekanik", "Periksa lampu indikator pada control table",
+                "Periksa pergerakan cycling pada stand tabung", "Periksa lampu kolimator", _BERSIH]),
+    dict(nama="Dental Panoramik", judul="PERALATAN RADIOLOGI DIAGNOSTIK DENTAL PANORAMIK", kode="RAD 2209.03/00", ruang="Dental Panoramik",
+         info=[["Nama Pesawat", "Carestream Dental"], ["Tahun Op", "2022"], ["Lokasi", "Siloam Hospitals Agora"], ["Type Model", "CS 2200"],
+               ["No Seri Tabung", "JIXV141"], ["Kapasitas Maks.", "70 kV"]],
+         items=[_SUHU, _HUM, "Periksa lampu indikator pada pad control", "Periksa pergerakan cycling pada stand tabung", _BERSIH]),
+    dict(nama="CT Scan", judul="PERALATAN RADIOLOGI DIAGNOSTIK CT SCAN", kode="RAD 2209.04/00", ruang="CT Scan",
+         info=[["Nama Pesawat", "Incisive CT"], ["Tahun Op", "2022"], ["Lokasi", "Siloam Hospitals Agora"],
+               ["Type Model", "vMRCPerformanceTube"], ["No Seri Tabung", "174175"], ["Kapasitas Maks.", "140 kV"]],
+         items=[_SUHU, _HUM, "Periksa mekanik", "Periksa lampu indikator pada control table", "Periksa Laser penanda",
+                "Melakukan Kalibrasi harian", _BERSIH, "Warm Up Alat"]),
+    dict(nama="MRI", judul="PERALATAN RADIOLOGI DIAGNOSTIK MRI", kode="RAD 2209.05/00", ruang="MRI",
+         info=[["Nama Pesawat", "MRI INGENIA PRODIVA"], ["Tahun Op", "2022"], ["Lokasi", "Siloam Hospitals Agora"]],
+         items=[_SUHU, _HUM, "Pengecekan akurasi posisi meja", "Evaluasi artefak", _BERSIH, "Test Phantom", "Helium level"]),
+    dict(nama="USG", judul="PERALATAN RADIOLOGI DIAGNOSTIK USG", kode="RAD 2209.06/00", ruang="USG",
+         info=[["Nama Pesawat", "Mindray Consona C9"], ["Tahun Op", "2024"], ["Lokasi", "Siloam Hospitals Agora"],
+               ["Type Transduser", "Linear, Curved"], ["No Seri Transduser", "KS4U3C012713, NA6C025926, KS4M3C018995"]],
+         items=[_SUHU, _HUM, "Kebersihan transduser", "Koneksi Kabel Transduser", "Kebersihan monitor", "Pengecekan komunikasi PACs",
+                "Pengecekan kondisi dan fungsi panel", "Pengecekan kondisi panel kendali kecerahan dan kontras monitor", _BERSIH]),
+    dict(nama="Mammografi", judul="PERALATAN RADIOLOGI DIAGNOSTIK MAMMOGRAFI", kode="RAD 2209.09/00", ruang="Mammography",
+         info=[["Nama Pesawat", "Seno Crystal Nova (Mammography)"], ["Tahun Op", "2022"], ["Lokasi", "Siloam Hospitals Agora"],
+               ["Type Model", "Senograph Crystal Nova"], ["No Seri Tabung", "DC1SS2200074HL"], ["Kapasitas Maks.", "49 kV"]],
+         items=[_SUHU, _HUM, "Periksa mekanik", "Periksa lampu indikator pada control table",
+                "Periksa pergerakan cycling pada stand tabung", "Periksa lampu kolimator", _BERSIH, "Flat field Test (Mingguan)"]),
+]
+
+DEFAULT_CFG = {
+    "rooms": [dict(nama=n, tekanan=False, t_lo=20.0, t_hi=24.0, h_lo=float(hl), h_hi=float(hh)) for n, hl, hh in _ROOMS],
+    "staff": ["SL", "AG", "AY", "WT", "FF"],
+    "devices": _DEVICES,
+}
+
+
+def now():
+    return dt.datetime.now(TZ)
+
+
+def TODAY():
+    return now().date()
+
+
+# =====================================================================
+# 1. AUTO-DOWNLOAD FONT LEXEND
+# =====================================================================
+def ensure_lexend_fonts():
+    reg_ok = os.path.exists(FONT_REG)
+    bold_ok = os.path.exists(FONT_BOLD)
+    for path, urls in FONT_URLS.items():
+        if os.path.exists(path):
+            continue
+        for url in urls:
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=20) as r, open(path, "wb") as f:
+                    f.write(r.read())
+                if path == FONT_REG:
+                    reg_ok = True
+                if path == FONT_BOLD:
+                    bold_ok = True
+                break
+            except Exception:
+                continue
+    return reg_ok, bold_ok
+
+
+# =====================================================================
+# 2. PENYIMPANAN (CSV + JSON)
+# =====================================================================
+ECOLS = ["id", "dibuat", "ruang", "tanggal", "shift", "suhu", "kelembapan", "petugas", "status", "temuan", "tindakan"]
+QCOLS = ["id", "dibuat", "alat", "tanggal", "petugas", "hasil", "catatan"]
+
+
+def save_cfg(c):
+    """Simpan ruang & staff. Daftar peralatan (devices) tetap dari kode, kecuali sudah ada manual di config.json."""
+    out = {k: c[k] for k in ("rooms", "staff") if k in c}
+    if os.path.exists(CFG_FILE):
+        try:
+            with open(CFG_FILE, encoding="utf-8") as f:
+                old = json.load(f)
+            if old.get("devices"):
+                out["devices"] = old["devices"]
+        except Exception:
+            pass
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(CFG_FILE, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, indent=2)
+
+
+def load_cfg():
+    cfg = json.loads(json.dumps(DEFAULT_CFG))
+    if os.path.exists(CFG_FILE):
+        try:
+            with open(CFG_FILE, encoding="utf-8") as f:
+                c = json.load(f)
+            for k in ("rooms", "staff", "devices"):
+                if c.get(k):
+                    cfg[k] = c[k]
+        except Exception:
+            pass
+    return cfg
+
+
+def rooms():
+    return load_cfg()["rooms"]
+
+
+def room_names():
+    return [r["nama"] for r in rooms()]
+
+
+def room_std(name):
+    for r in rooms():
+        if r["nama"] == name:
+            return r
+    return dict(nama=name, tekanan=False, t_lo=20.0, t_hi=24.0, h_lo=30.0, h_hi=70.0)
+
+
+def devices():
+    return load_cfg()["devices"]
+
+
+def dev_by_name(name):
+    for d in devices():
+        if d["nama"] == name:
+            return d
+    return devices()[0]
+
+
+def _read(path, cols):
+    if os.path.exists(path):
+        try:
+            df = pd.read_csv(path, dtype=str, encoding="utf-8-sig").fillna("")
+        except Exception:
+            df = pd.DataFrame(columns=cols)
+    else:
+        df = pd.DataFrame(columns=cols)
+    for c in cols:
+        if c not in df.columns:
+            df[c] = ""
+    return df[cols]
+
+
+def _next_id(df):
+    return str(1 + max([int(x) for x in df["id"] if str(x).isdigit()] + [0]))
+
+
+def load_entries():
+    return _read(ENTRY_FILE, ECOLS)
+
+
+def load_qc():
+    return _read(QC_FILE, QCOLS)
+
+
+def save_entry(**kw):
+    """Simpan 1 pengukuran. Data dengan ruang+tanggal+shift yang sama ditimpa."""
+    df = load_entries()
+    if len(df):
+        m = (df["ruang"] == kw["ruang"]) & (df["tanggal"] == kw["tanggal"]) & (df["shift"] == kw["shift"])
+        df = df[~m]
+    row = {c: "" for c in ECOLS}
+    for k, v in kw.items():
+        row[k] = str(v)
+    row["id"] = _next_id(df)
+    row["dibuat"] = now().strftime("%Y-%m-%d %H:%M:%S")
+    df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    df.to_csv(ENTRY_FILE, index=False)
+
+
+def delete_entry(eid):
+    df = load_entries()
+    df[df["id"] != str(eid)].to_csv(ENTRY_FILE, index=False)
+
+
+def save_qc(alat, tanggal, petugas, hasil, catatan):
+    """Simpan checklist QC 1 alat 1 hari. Data alat+tanggal yang sama ditimpa."""
+    df = load_qc()
+    if len(df):
+        df = df[~((df["alat"] == alat) & (df["tanggal"] == tanggal))]
+    row = dict(id=_next_id(df), dibuat=now().strftime("%Y-%m-%d %H:%M:%S"), alat=alat, tanggal=tanggal,
+               petugas=petugas, hasil=json.dumps(hasil, ensure_ascii=False), catatan=catatan)
+    df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    df.to_csv(QC_FILE, index=False)
+
+
+def delete_qc(eid):
+    df = load_qc()
+    df[df["id"] != str(eid)].to_csv(QC_FILE, index=False)
+
+
+def qc_get(alat, tgl):
+    df = load_qc()
+    df = df[(df["alat"] == alat) & (df["tanggal"] == tgl.isoformat())]
+    if not len(df):
+        return None
+    r = df.iloc[-1].to_dict()
+    try:
+        hasil = json.loads(r["hasil"]) if r["hasil"] else {}
+    except Exception:
+        hasil = {}
+    return dict(petugas=r["petugas"], done=set(k for k, v in hasil.items() if v), catatan=r["catatan"], id=r["id"])
+
+
+def fnum(v):
+    return "%g" % v
+
+
+# =====================================================================
+# 3. DATA BULANAN + ANALISA : SUHU & KELEMBABAN
+# =====================================================================
+def slot_due(d, s):
+    n = now()
+    if d < n.date():
+        return True
+    if d > n.date():
+        return False
+    return n.hour >= SHIFT_HOUR[s]
+
+
+def month_data(ruang, y, m):
+    """{(tanggal, 'P'|'S'|'M'): dict(suhu, hum, petugas, ket, id)}"""
+    out = {}
+    df = load_entries()
+    df = df[df["ruang"] == ruang]
+    for r in df.to_dict("records"):
+        try:
+            td = dt.date.fromisoformat(r["tanggal"])
+            if td.year != y or td.month != m:
+                continue
+            ket = r["temuan"] + (" (" + r["tindakan"] + ")" if r["tindakan"] and r["temuan"] else "")
+            out[(td.day, r["shift"][:1])] = dict(suhu=float(r["suhu"]), hum=float(r["kelembapan"]),
+                                                 petugas=r["petugas"], ket=ket, id=r["id"])
+        except Exception:
+            continue
+    return out
+
+
+def classify(v, lo, hi):
+    return "ok" if lo <= v <= hi else ("high" if v > hi else "low")
+
+
+def analyze(ruang, y, m):
+    std = room_std(ruang)
+    data = month_data(ruang, y, m)
+    n = calendar.monthrange(y, m)[1]
+    slots, empty_by_day = {}, {}
+    high, low, hum_bad = [], [], []
+    due = filled = filled_due = ok = hum_ok = 0
+    for d in range(1, n + 1):
+        for s in "PSM":
+            is_due = slot_due(dt.date(y, m, d), s)
+            e = data.get((d, s))
+            if e is None:
+                slots[(d, s)] = dict(state="empty" if is_due else "future")
+                if is_due:
+                    due += 1
+                    empty_by_day.setdefault(d, []).append(s)
+                continue
+            st_ = classify(e["suhu"], std["t_lo"], std["t_hi"])
+            hs = classify(e["hum"], std["h_lo"], std["h_hi"])
+            slots[(d, s)] = dict(state=st_, t=e["suhu"], h=e["hum"], hstate=hs, petugas=e["petugas"])
+            if is_due:
+                due += 1
+                filled_due += 1
+            filled += 1
+            ok += 1 if st_ == "ok" else 0
+            hum_ok += 1 if hs == "ok" else 0
+            if st_ == "high":
+                high.append((d, s, e["suhu"]))
+            elif st_ == "low":
+                low.append((d, s, e["suhu"]))
+            if hs != "ok":
+                hum_bad.append((d, s, e["hum"], hs))
+    full_empty = [d for d, v in empty_by_day.items() if len(v) == 3]
+    return dict(std=std, n=n, slots=slots, empty_by_day=empty_by_day, high=high, low=low, hum_bad=hum_bad, due=due, filled=filled,
+                filled_due=filled_due, ok=ok, hum_ok=hum_ok, pct_fill=(filled_due / due * 100 if due else 0.0), pct_ok=(ok / filled * 100 if filled else 0.0),
+                pct_hum=(hum_ok / filled * 100 if filled else 0.0), full_empty=sorted(full_empty), n_empty=sum(len(v) for v in empty_by_day.values()))
+
+
+def abnormal_today():
+    """Pengukuran HARI INI (semua ruang) yang di luar batas -> perlu hubungi teknisi."""
+    df = load_entries()
+    df = df[df["tanggal"] == TODAY().isoformat()]
+    bad = []
+    for r in df.to_dict("records"):
+        try:
+            std = room_std(r["ruang"])
+            sv, hv = float(r["suhu"]), float(r["kelembapan"])
+        except Exception:
+            continue
+        ts, hs = classify(sv, std["t_lo"], std["t_hi"]), classify(hv, std["h_lo"], std["h_hi"])
+        if ts != "ok" or hs != "ok":
+            parts = []
+            if ts != "ok":
+                parts.append("suhu {:g}°C ({})".format(sv, "di atas" if ts == "high" else "di bawah"))
+            if hs != "ok":
+                parts.append("kelembapan {:g}% ({})".format(hv, "di atas" if hs == "high" else "di bawah"))
+            bad.append("<b>{}</b> - {}: {}".format(escape(r["ruang"]), SHIFT_NAME.get(r["shift"][:1], r["shift"]), ", ".join(parts)))
+    return bad
+
+
+# =====================================================================
+# 4. DATA BULANAN + ANALISA : QC PERALATAN
+# =====================================================================
+def auto_kind(item):
+    s = item.lower()
+    if s.startswith("periksa suhu"):
+        return "suhu"
+    if s.startswith("periksa kelembaban"):
+        return "hum"
+    return None
+
+
+def is_daily(item):
+    return "mingguan" not in item.lower()
+
+
+def auto_status(dev, tgl):
+    """Untuk alat yang terhubung ke ruang: apakah suhu/kelembaban hari itu sudah diinput."""
+    res = dict(suhu=False, hum=False)
+    if dev.get("ruang"):
+        if any(True for (d, _s) in month_data(dev["ruang"], tgl.year, tgl.month) if d == tgl.day):
+            res = dict(suhu=True, hum=True)
+    return res
+
+
+def qc_month(dev, y, m):
+    """{tanggal: dict(petugas, done=set(item), catatan)} - sudah digabung dengan item otomatis suhu/kelembaban."""
+    out = {}
+    df = load_qc()
+    df = df[df["alat"] == dev["nama"]]
+    for r in df.to_dict("records"):
+        try:
+            td = dt.date.fromisoformat(r["tanggal"])
+            if td.year != y or td.month != m:
+                continue
+            hasil = json.loads(r["hasil"]) if r["hasil"] else {}
+            out[td.day] = dict(petugas=r["petugas"], done=set(k for k, v in hasil.items() if v), catatan=r["catatan"], id=r["id"])
+        except Exception:
+            continue
+    if dev.get("ruang"):
+        for (d, _s) in month_data(dev["ruang"], y, m):
+            ent = out.setdefault(d, dict(petugas="", done=set(), catatan="", id=""))
+            for it in dev["items"]:
+                if auto_kind(it):
+                    ent["done"].add(it)
+    return out
+
+
+def qc_analyze(dev, y, m):
+    data = qc_month(dev, y, m)
+    n = calendar.monthrange(y, m)[1]
+    daily = [i for i in dev["items"] if is_daily(i)]
+    n_now = now()
+    days, missing = {}, []
+    counted = full = filled = item_done = item_total = 0
+    for d in range(1, n + 1):
+        dd = dt.date(y, m, d)
+        is_due = dd < n_now.date() or (dd == n_now.date() and n_now.hour >= QC_DUE_HOUR)
+        e = data.get(d)
+        miss = [i for i in daily if not (e and i in e["done"])]
+        dn = len(daily) - len(miss)
+        if dn == len(daily):
+            state = "full"
+        elif dn > 0:
+            state = "part"
+        else:
+            state = "empty" if is_due else "future"
+        days[d] = dict(state=state, done=dn, total=len(daily))
+        if is_due or dn > 0:
+            counted += 1
+            item_total += len(daily)
+            item_done += dn
+            if state == "full":
+                full += 1
+            if dn > 0:
+                filled += 1
+            if state in ("part", "empty"):
+                missing.append((d, state, miss))
+    return dict(days=days, n=n, counted=counted, full=full, filled=filled, item_done=item_done, item_total=item_total,
+                pct_full=(full / counted * 100 if counted else 0.0), pct_item=(item_done / item_total * 100 if item_total else 0.0),
+                missing=missing, n_empty=sum(1 for _d, s, _m in missing if s == "empty"),
+                n_part=sum(1 for _d, s, _m in missing if s == "part"))
+
+
+# =====================================================================
+# 5. GAMBAR FORMULIR (vektor: dipakai untuk preview SVG & PDF)
+# =====================================================================
+BAND, TEAL, NAVY, RED, BLACK = "#cfe2f3", "#1b7895", "#004e75", "#ff0000", "#000000"
+PINK = "#f4cccc"   # pita "didalam batas normal"
+GRAYL = "#efefef"
+
+
+def _png_dimensions(path):
+    try:
+        with open(path, "rb") as f:
+            head = f.read(24)
+        if len(head) < 24 or head[:8] != b"\x89PNG\r\n\x1a\n":
+            return None, None
+        return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
+    except Exception:
+        return None, None
+
+
+def _logo_b64():
+    if os.path.exists(LOGO_FILE):
+        with open(LOGO_FILE, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    return None
+
+
+def _fit_box(src_w, src_h, dst_w, dst_h):
+    if not src_w or not src_h:
+        return dst_w, dst_h
+    scale = min(dst_w / src_w, dst_h / src_h)
+    return src_w * scale, src_h * scale
+
+
+class Sheet:
+    """Daftar operasi gambar dalam 'unit' (y ke bawah). width/height diisi builder."""
+
+    def __init__(self, width=1000.0, height=700.0):
+        self.ops = []
+        self.width = width
+        self.height = height
+
+    def rect(self, x, y, w, h, fill=None, stroke=None, lw=1.0):
+        self.ops.append(("rect", x, y, w, h, fill, stroke, lw))
+
+    def line(self, x1, y1, x2, y2, color=BLACK, lw=1.0):
+        self.ops.append(("line", x1, y1, x2, y2, color, lw))
+
+    def text(self, x, y, s, size=8.0, bold=False, color=BLACK, anchor="start", rot=0):
+        self.ops.append(("text", x, y, str(s), size, bold, color, anchor, rot))
+
+    def circle(self, cx, cy, r, fill=None, stroke=None, lw=1.0):
+        self.ops.append(("circle", cx, cy, r, fill, stroke, lw))
+
+    def image(self, x, y, w, h, data_b64):
+        self.ops.append(("image", x, y, w, h, data_b64))
+
+    def ctext(self, x, y, w, h, s, size=8.0, bold=False, color=BLACK):
+        lines = str(s).split("\n")
+        lh = size * 1.18
+        base = y + (h - lh * len(lines)) / 2 + size * 0.82
+        for i, ln in enumerate(lines):
+            self.text(x + w / 2, base + i * lh, ln, size, bold, color, "middle")
+
+    def ltext(self, x, y, h, s, size=8.0, bold=False, color=BLACK):
+        """Teks rata kiri, rata tengah secara vertikal dalam kotak setinggi h."""
+        lines = str(s).split("\n")
+        lh = size * 1.18
+        base = y + (h - lh * len(lines)) / 2 + size * 0.82
+        for i, ln in enumerate(lines):
+            self.text(x, base + i * lh, ln, size, bold, color, "start")
+
+    def check(self, cx, cy, color=BLACK, lw=1.2):
+        self.line(cx - 3.4, cy + 0.2, cx - 1.1, cy + 2.9, color, lw)
+        self.line(cx - 1.1, cy + 2.9, cx + 3.6, cy - 3.0, color, lw)
+
+
+def _logo_into(sh, x, y, box_w, box_h):
+    logo = _logo_b64()
+    if logo:
+        sw, shh = _png_dimensions(LOGO_FILE)
+        fw, fh = _fit_box(sw, shh, box_w, box_h)
+        sh.image(x, y + (box_h - fh) / 2, fw, fh, logo)
+    else:   # cadangan bila file logo belum ada
+        sh.text(x, y + box_h * 0.7, "Siloam", 16, True, "#1d4f9c")
+        sh.text(x + 52, y + box_h * 0.7, SITE, 16, True, "#3a9a3a")
+
+
+# ---------- FORM 1: SUHU & KELEMBABAN (SHKL 2205.11/2) ----------
+X0, AW, BW = 6.0, 26.0, 26.0
+XD = X0 + AW + BW
+SUBW = 10.0
+DAYW = SUBW * 3
+XE = XD + 31 * DAYW
+LW = 0.5
+CELL = 22.0   # tinggi 1 label (= 2 baris kecil)
+
+
+def build_th_form(ruang, y, m, data):
+    std = room_std(ruang)
+    tlo, thi, hlo, hhi = std["t_lo"], std["t_hi"], std["h_lo"], std["h_hi"]
+    ymax = max(27, int(math.ceil(thi)) + 1)
+    ymin = min(16, int(math.floor(tlo)) - 1)
+    t_labels = [("{}°C".format(v), v) for v in range(ymax, ymin - 1, -1)]
+    h_labels = [("{}%".format(v), v) for v in range(100, 0, -10)]
+    W = XE + 6
+    sh = Sheet(W, 0)
+
+    # ---- header ----
+    _logo_into(sh, X0, 3, 96, 32)
+    sh.text(W / 2, 16, "Pemeriksaan Harian Suhu & Kelembaban Ruang Radiology - " + ruang, 12, True, anchor="middle")
+    for i, (lab, val) in enumerate([(HOSPITAL, SITE), ("Ruang", ruang.upper()), ("Bulan", "{} {}".format(BLN[m - 1].upper(), y))]):
+        sh.text(X0, 44 + i * 11, lab, 8.5)
+        sh.text(X0 + 92, 44 + i * 11, ": " + val, 8.5)
+    sh.text(420, 44, "Suhu", 8.5)
+    sh.text(480, 44, ": {:g} - {:g} °C".format(tlo, thi), 8.5)
+    sh.text(420, 55, "Kelembaban", 8.5)
+    sh.text(480, 55, ": {:g} - {:g} %".format(hlo, hhi), 8.5)
+    sh.rect(740, 36, 13, 9, PINK, "#9e9e9e", 0.5)
+    sh.text(757, 44, ": didalam batas normal", 8.5)
+
+    def block(y0, kind):
+        HT, HJ, HN = 13.0, 11.0, 13.0
+        # tanggal & jam
+        sh.rect(X0, y0, XD - X0, HT, None, BLACK, LW)
+        sh.ctext(X0, y0, XD - X0, HT, "Tanggal", 7.5)
+        y1 = y0 + HT
+        sh.rect(X0, y1, XD - X0, HJ, None, BLACK, LW)
+        sh.ctext(X0, y1, XD - X0, HJ, "Jam", 7)
+        for d in range(1, 32):
+            x = XD + (d - 1) * DAYW
+            sh.rect(x, y0, DAYW, HT, None, BLACK, LW)
+            sh.ctext(x, y0, DAYW, HT, str(d), 7.5)
+            for k, hh in enumerate((8, 14, 22)):
+                sh.rect(x + k * SUBW, y1, SUBW, HJ, None, BLACK, LW)
+                sh.ctext(x + k * SUBW, y1, SUBW, HJ, str(hh), 5)
+        gt = y1 + HJ
+        labels = t_labels if kind == "t" else h_labels
+        gh = len(labels) * CELL
+        if kind == "t":
+            yv = lambda v: gt + (ymax - v) * CELL + CELL / 2
+            lo, hi, side = tlo, thi, "Suhu"
+        else:
+            yv = lambda v: gt + (100 - v) / 10.0 * CELL + CELL / 2
+            lo, hi, side = hlo, hhi, "Kelembaban"
+        # pita batas normal
+        top, bot = max(gt, yv(hi)), min(gt + gh, yv(lo))
+        if bot > top:
+            sh.rect(XD, top, XE - XD, bot - top, PINK, None, 0)
+        # garis grid
+        for i in range(0, 2 * len(labels) + 1):
+            yy = gt + i * CELL / 2
+            sh.line(XD, yy, XE, yy, BLACK, LW)
+        for i in range(0, 93):
+            xx = XD + i * SUBW
+            sh.line(xx, gt, xx, gt + gh, BLACK, 0.7 if i % 3 == 0 else LW)
+        sh.rect(XD, gt, XE - XD, gh, None, BLACK, 0.9)
+        # kolom label
+        sh.rect(X0, gt, AW, gh, None, BLACK, LW)
+        sh.text(X0 + AW / 2 + 3.2, gt + gh / 2, side, 9, False, BLACK, "middle", 90)
+        for i, (lab, _v) in enumerate(labels):
+            sh.rect(X0 + AW, gt + i * CELL, BW, CELL, None, BLACK, LW)
+            sh.ctext(X0 + AW, gt + i * CELL, BW, CELL, lab, 5.5)
+        # baris nama
+        yn = gt + gh
+        sh.rect(X0, yn, AW, HN, None, BLACK, LW)
+        sh.ctext(X0, yn, AW, HN, "Nama", 6.5)
+        sh.rect(X0 + AW, yn, BW, HN, BLACK, BLACK, LW)
+        for d in range(1, 32):
+            for k, s in enumerate("PSM"):
+                x = XD + (d - 1) * DAYW + k * SUBW
+                sh.rect(x, yn, SUBW, HN, None, BLACK, LW)
+                e = data.get((d, s))
+                if e and e["petugas"]:
+                    sh.ctext(x, yn, SUBW, HN, e["petugas"], 5.3)
+        # titik data
+        for (d, s), e in data.items():
+            v = e["suhu"] if kind == "t" else e["hum"]
+            k = "PSM".index(s)
+            cx = XD + (d - 1) * DAYW + (k + .5) * SUBW
+            cy = min(max(yv(v), gt + 3.0), gt + gh - 3.0)
+            sh.circle(cx, cy, 2.8, BLACK if lo <= v <= hi else RED)
+        return yn + HN
+
+    yb = block(72.0, "t")
+    yb = block(yb + 6, "h")
+
+    # ---- catatan & kode ----
+    sh.text(XE, yb + 11, FORM_CODE_TH, 8.5, False, BLACK, "end")
+    sh.text(X0, yb + 15, "Catatan", 8.5)
+    sh.text(X0 + 52, yb + 15, ":", 8.5)
+    sh.text(X0 + 62, yb + 15, "1) Hubungi teknisi bila terjadi ketidaksesuaian pengukuran batas normal", 8.5)
+    sh.text(X0 + 62, yb + 26, "2) Batas suhu dan kelembaban berdasarkan Permenkes No 24 Tahun 2020 dan Manual Book Alat", 8.5)
+    yend = yb + 30
+    notes = []
+    for (d, s), e in sorted(data.items()):
+        if e.get("ket"):
+            notes.extend(textwrap.wrap("Tgl {}/{}: {}".format(d, SHIFT_NAME[s], e["ket"]), 190))
+    if notes:
+        sh.text(X0 + 62, yend + 11, "Temuan:", 8, True)
+        for i, ln in enumerate(notes[:6]):
+            sh.text(X0 + 62, yend + 22 + i * 10, ln, 7.5)
+        yend += 22 + min(len(notes), 6) * 10
+    sh.height = yend + 8
+    return sh
+
+
+# ---------- FORM 2: CHECKLIST PEMELIHARAAN (RAD 2209.xx/00) ----------
+def build_qc_form(dev, y, m, data):
+    items = dev["items"]
+    X0_, NOW_, ACTW, DAYW_ = 6.0, 24.0, 235.0, 17.0
+    XD_ = X0_ + NOW_ + ACTW
+    XE_ = XD_ + 31 * DAYW_
+    W = XE_ + 6
+    sh = Sheet(W, 0)
+    cy = 14.0
+    for ln in ("CHECKLIST KEGIATAN PEMELIHARAAN", dev["judul"], DEPT_LINE):
+        sh.text(W / 2, cy, ln, 11, True, anchor="middle")
+        cy += 14
+    # tabel info alat
+    yt = cy + 6
+    IH, LABW, VALW = 16.0, 112.0, 270.0
+    for i, (lab, val) in enumerate(dev["info"]):
+        yy = yt + i * IH
+        sh.rect(X0_, yy, LABW, IH, None, BLACK, LW)
+        sh.ltext(X0_ + 4, yy, IH, lab, 8)
+        sh.rect(X0_ + LABW, yy, VALW, IH, None, BLACK, LW)
+        sh.ltext(X0_ + LABW + 4, yy, IH, val, 8)
+    yh = yt + len(dev["info"]) * IH + 14
+    HH, RHI = 16.0, 22.0
+    sh.rect(X0_, yh, NOW_, 2 * HH, GRAYL, BLACK, LW)
+    sh.ctext(X0_, yh, NOW_, 2 * HH, "No.", 8, True)
+    sh.rect(X0_ + NOW_, yh, ACTW, 2 * HH, GRAYL, BLACK, LW)
+    sh.ctext(X0_ + NOW_, yh, ACTW, 2 * HH, "Nama Kegiatan harian", 8.5, True)
+    sh.rect(XD_, yh, XE_ - XD_, HH, GRAYL, BLACK, LW)
+    sh.ctext(XD_, yh, XE_ - XD_, HH, "{} {}".format(BLN[m - 1].upper(), y), 9, True)
+    for d in range(1, 32):
+        x = XD_ + (d - 1) * DAYW_
+        sh.rect(x, yh + HH, DAYW_, HH, GRAYL, BLACK, LW)
+        sh.ctext(x, yh + HH, DAYW_, HH, str(d), 7.5)
+    yi = yh + 2 * HH
+    for i, it in enumerate(items):
+        yy = yi + i * RHI
+        sh.rect(X0_, yy, NOW_, RHI, None, BLACK, LW)
+        sh.ctext(X0_, yy, NOW_, RHI, str(i + 1), 8)
+        sh.rect(X0_ + NOW_, yy, ACTW, RHI, None, BLACK, LW)
+        sh.ltext(X0_ + NOW_ + 4, yy, RHI, "\n".join(textwrap.wrap(it, 50)[:2]), 7.5)
+        for d in range(1, 32):
+            x = XD_ + (d - 1) * DAYW_
+            sh.rect(x, yy, DAYW_, RHI, None, BLACK, LW)
+            e = data.get(d)
+            if e and it in e["done"]:
+                sh.check(x + DAYW_ / 2, yy + RHI / 2)
+    ys = yi + len(items) * RHI
+    NH = 24.0
+    sh.rect(X0_, ys, NOW_ + ACTW, NH, None, BLACK, LW)
+    sh.ctext(X0_, ys, NOW_ + ACTW, NH, "Nama Staff", 8.5, True)
+    for d in range(1, 32):
+        x = XD_ + (d - 1) * DAYW_
+        sh.rect(x, ys, DAYW_, NH, None, BLACK, LW)
+        e = data.get(d)
+        if e and e["petugas"]:
+            sh.ctext(x, ys, DAYW_, NH, e["petugas"], 6.2)
+    yend = ys + NH
+    sh.text(XE_, yend + 12, dev["kode"], 8.5, False, BLACK, "end")
+    notes = []
+    for d in sorted(data):
+        if data[d].get("catatan"):
+            notes.extend(textwrap.wrap("Tgl {}: {}".format(d, data[d]["catatan"]), 170))
+    if notes:
+        sh.text(X0_, yend + 12, "Catatan:", 8.5, True)
+        for i, ln in enumerate(notes[:6]):
+            sh.text(X0_ + 6, yend + 24 + i * 10, ln, 7.5)
+        yend += 24 + min(len(notes), 6) * 10
+    sh.height = yend + 20
+    return sh
+
+
+# ---------- konverter: SVG (preview) & PDF ----------
+def _font_css():
+    css = ""
+    for path, wgt in ((FONT_REG, 400), (FONT_BOLD, 700)):
+        if os.path.exists(path):
+            try:
+                with open(path, "rb") as f:
+                    b = base64.b64encode(f.read()).decode()
+                css += "@font-face{{font-family:'LexendEmbed';font-style:normal;font-weight:{};src:url(data:font/ttf;base64,{}) format('truetype');}}".format(wgt, b)
+            except Exception:
+                pass
+    return css
+
+
+def sheet_to_svg(sh, width_px=1400):
+    W, H = sh.width, sh.height
+    p = ["<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {:.1f} {:.1f}' width='{}' height='{}' font-family=\"LexendEmbed, Lexend, Helvetica, Arial, sans-serif\">".format(
+        W, H, width_px, int(width_px * H / W))]
+    css = _font_css()
+    if css:
+        p.append("<defs><style type='text/css'>{}</style></defs>".format(css))
+    p.append("<rect x='0' y='0' width='{:.1f}' height='{:.1f}' fill='#ffffff'/>".format(W, H))
+    for op in sh.ops:
+        k = op[0]
+        if k == "rect":
+            _, x, y, w, h, fill, stroke, lw = op
+            p.append("<rect x='{:.2f}' y='{:.2f}' width='{:.2f}' height='{:.2f}' fill='{}' stroke='{}' stroke-width='{}'/>".format(
+                x, y, w, h, fill or "none", stroke or "none", lw))
+        elif k == "line":
+            _, x1, y1, x2, y2, c, lw = op
+            p.append("<line x1='{:.2f}' y1='{:.2f}' x2='{:.2f}' y2='{:.2f}' stroke='{}' stroke-width='{}' stroke-linecap='round'/>".format(x1, y1, x2, y2, c, lw))
+        elif k == "circle":
+            _, cx, cy, r, fill, stroke, lw = op
+            p.append("<circle cx='{:.2f}' cy='{:.2f}' r='{}' fill='{}' stroke='{}' stroke-width='{}'/>".format(cx, cy, r, fill or "none", stroke or "none", lw))
+        elif k == "image":
+            _, x, y, w, h, b64 = op
+            p.append("<image x='{:.2f}' y='{:.2f}' width='{:.2f}' height='{:.2f}' preserveAspectRatio='xMidYMid meet' href='data:image/png;base64,{}'/>".format(x, y, w, h, b64))
+        else:
+            _, x, y, s, size, bold, color, anchor, rot = op
+            tf = " transform='rotate(-{} {:.2f} {:.2f})'".format(rot, x, y) if rot else ""
+            p.append("<text x='{:.2f}' y='{:.2f}' font-size='{}' font-weight='{}' fill='{}' text-anchor='{}'{}>{}</text>".format(
+                x, y, size, "bold" if bold else "normal", color, anchor, tf, escape(s)))
+    return "".join(p) + "</svg>"
+
+
+LEXEND_STATUS = {"reg": False, "bold": False, "tried": False}
+
+
+def _register_lexend():
+    if LEXEND_STATUS["tried"]:
+        return LEXEND_STATUS["reg"], LEXEND_STATUS["bold"]
+    ensure_lexend_fonts()
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    ok = {}
+    for key, name, path in (("reg", "Lexend", FONT_REG), ("bold", "Lexend-Bold", FONT_BOLD)):
+        ok[key] = False
+        if os.path.exists(path):
+            try:
+                pdfmetrics.registerFont(TTFont(name, path))
+                ok[key] = True
+            except Exception:
+                pass
+    LEXEND_STATUS.update(reg=ok["reg"], bold=ok["bold"], tried=True)
+    return ok["reg"], ok["bold"]
+
+
+def sheets_to_pdf(sheets, title="Formulir Radiologi - Siloam Hospitals Agora"):
+    from reportlab.lib.colors import HexColor
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.pdfgen.canvas import Canvas
+    from reportlab.lib.utils import ImageReader
+
+    reg_ok, bold_ok = _register_lexend()
+    fn_reg = "Lexend" if reg_ok else "Helvetica"
+    fn_bold = "Lexend-Bold" if bold_ok else "Helvetica-Bold"
+    buf = io.BytesIO()
+    pw, ph = landscape(A4)
+    MG = 22.0
+    c = Canvas(buf, pagesize=(pw, ph))
+    c.setTitle(title)
+    c.setAuthor("Siloam Hospitals Agora - Instalasi Radiologi")
+
+    for sh in sheets:
+        s = min((pw - 2 * MG) / sh.width, (ph - 2 * MG) / sh.height)
+        ox = (pw - sh.width * s) / 2
+        tx = lambda x: ox + x * s
+        ty = lambda y: ph - (MG + y * s)
+        for op in sh.ops:
+            k = op[0]
+            if k == "rect":
+                _, x, y, w, h, fill, stroke, lw = op
+                if not fill and not stroke:
+                    continue
+                if fill:
+                    c.setFillColor(HexColor(fill))
+                if stroke:
+                    c.setStrokeColor(HexColor(stroke))
+                    c.setLineWidth(max(lw * s, 0.1))
+                c.rect(tx(x), ty(y + h), w * s, h * s, stroke=1 if stroke else 0, fill=1 if fill else 0)
+            elif k == "line":
+                _, x1, y1, x2, y2, col, lw = op
+                c.setStrokeColor(HexColor(col))
+                c.setLineWidth(max(lw * s, 0.1))
+                c.setLineCap(1)
+                c.line(tx(x1), ty(y1), tx(x2), ty(y2))
+            elif k == "circle":
+                _, cx, cy, r, fill, stroke, lw = op
+                if fill:
+                    c.setFillColor(HexColor(fill))
+                if stroke:
+                    c.setStrokeColor(HexColor(stroke))
+                    c.setLineWidth(max(lw * s, 0.1))
+                c.circle(tx(cx), ty(cy), r * s, stroke=1 if stroke else 0, fill=1 if fill else 0)
+            elif k == "image":
+                _, x, y, w, h, b64 = op
+                try:
+                    img = ImageReader(io.BytesIO(base64.b64decode(b64)))
+                    c.drawImage(img, tx(x), ty(y + h), w * s, h * s, mask="auto", preserveAspectRatio=True)
+                except Exception:
+                    pass
+            else:
+                _, x, y, txt, size, bold, color, anchor, rot = op
+                c.saveState()
+                c.setFillColor(HexColor(color))
+                c.setFont(fn_bold if bold else fn_reg, size * s)
+                c.translate(tx(x), ty(y))
+                if rot:
+                    c.rotate(rot)
+                if anchor == "middle":
+                    c.drawCentredString(0, 0, txt)
+                elif anchor == "end":
+                    c.drawRightString(0, 0, txt)
+                else:
+                    c.drawString(0, 0, txt)
+                c.restoreState()
+        c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
+# =====================================================================
+# 6. STYLE & KOMPONEN UI
+# =====================================================================
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&display=swap');
+
+:root, html, body { color-scheme: light !important; }
+html, body, [class*="css"], .stApp, .stMarkdown, .stButton, .stTextInput,
+.stSelectbox, .stDateInput, .stNumberInput, .stRadio, .stCheckbox, .stDataFrame,
+[data-testid="stSidebar"], [data-testid="stHeader"], [data-testid="stAppViewContainer"] {
+    font-family: 'Lexend', 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
+    color-scheme: light !important;
+}
+.stApp{background:#f4f7fa !important;color:#111 !important}
+[data-testid=stSidebar]{background:#ffffff !important;color:#111 !important}
+[data-testid="stHeader"]{background:transparent !important}
+.block-container{padding-top:1.2rem;max-width:100%}
+button[kind="primary"]{background:#0b5cab;border-color:#0b5cab}
+
+.kp{display:flex;gap:12px;margin:6px 0 14px;flex-wrap:wrap}.kc{flex:1;min-width:150px;background:#fff;border-radius:8px;padding:12px 16px;box-shadow:0 1px 3px #0001;border-top:4px solid #0b5cab}
+.kc .t{font-size:12px;color:#667}.kc .v{font-size:28px;font-weight:700;margin:2px 0;color:#111}.kc .s{font-size:11px;color:#778}
+.cal{border-collapse:collapse;font-size:11px}.cal td,.cal th{border:1px solid #fff;text-align:center;min-width:26px;height:24px;padding:0 2px}
+.cal th{background:#cfe2f3;color:#124}.cal td.l{text-align:left;font-weight:700;background:#eef4fb;padding:0 8px;min-width:80px;white-space:nowrap}
+.s-ok{background:#2e9e5b;color:#fff}.s-high{background:#d64545;color:#fff;font-weight:700}.s-low{background:#f0a81c;color:#2b2000;font-weight:700}
+.s-empty{background:#9aa5b1;color:#fff}.s-future{background:#eef1f5;color:#bbb}
+.lg2{display:flex;gap:16px;font-size:12px;margin:8px 0;flex-wrap:wrap}.lg2 i{display:inline-block;width:14px;height:14px;border-radius:3px;margin-right:6px;vertical-align:-3px}
+.box{background:#fff;border-radius:8px;padding:12px 16px;box-shadow:0 1px 3px #0001;margin-bottom:10px;font-size:13px;line-height:1.7}
+.alert{background:#fdecec;border-left:5px solid #d64545;border-radius:6px;padding:10px 16px;margin:4px 0 12px;font-size:13px;line-height:1.7;color:#5b1111}
+.hint{font-size:12px;margin:-8px 0 8px 2px}.hint.ok{color:#2e9e5b}.hint.bad{color:#d64545}
+</style>
+""", unsafe_allow_html=True)
+
+
+def header():
+    """Header dengan style inline supaya tidak ditimpa markdown Streamlit."""
+    logo = _logo_b64()
+    img = "<img src='data:image/png;base64,{}' style='height:54px;margin:0 0 14px'>".format(logo) if logo else ""
+    st.markdown(
+        """
+        <div style="background:#f8f9fb; padding:28px 30px; border-radius:12px; margin-bottom:20px; text-align:center; box-shadow:0 1px 4px rgba(0,0,0,.05); border: 1px solid #e1e5eb;">
+            {img}
+            <div style="font-size:44px; margin:0 0 6px; font-weight:800; letter-spacing:2px; color:#0b5cab; line-height:1.2;">DIGITAL MONITORING SHAG</div>
+            <div style="font-size:15px; margin:0 0 22px; font-style:italic; color:#6b7280; letter-spacing:1px;">Siloam Hospitals Agora &middot; Suhu &middot; Kelembaban &middot; QC Peralatan</div>
+            <div style="font-size:15px; margin:0 0 14px; font-weight:700; color:#374151; line-height:1.6; letter-spacing:0.5px;">PEMERIKSAAN HARIAN SUHU &amp; KELEMBABAN RUANG RADIOLOGY<br>DAN CHECKLIST PEMELIHARAAN PERALATAN RADIOLOGI</div>
+            <div style="font-size:13px; margin:0; color:#9ca3af;">Instalasi Radiologi &nbsp;|&nbsp; {code}</div>
+        </div>
+        """.format(img=img, code=FORM_CODE_TH + " &nbsp;&middot;&nbsp; RAD 2209.xx/00"),
+        unsafe_allow_html=True)
+
+
+def month_year_bar(prefix, cols=(1.6, 1)):
+    t = TODAY()
+    c2, c3 = st.columns(list(cols))
+    bln = c2.selectbox("Bulan", list(range(1, 13)), format_func=lambda x: BLN[x - 1], index=t.month - 1, key=prefix + "_bln")
+    yrs = list(range(t.year - 2, t.year + 2))
+    thn = c3.selectbox("Tahun", yrs, index=yrs.index(t.year), key=prefix + "_thn")
+    return int(bln), int(thn)
+
+
+def filter_bar(prefix, options, label):
+    c1, c2, c3 = st.columns([2.2, 1.6, 1])
+    pilih = c1.selectbox(label, options, key=prefix + "_pilih")
+    t = TODAY()
+    bln = c2.selectbox("Bulan", list(range(1, 13)), format_func=lambda x: BLN[x - 1], index=t.month - 1, key=prefix + "_bln")
+    yrs = list(range(t.year - 2, t.year + 2))
+    thn = c3.selectbox("Tahun", yrs, index=yrs.index(t.year), key=prefix + "_thn")
+    return pilih, int(bln), int(thn)
+
+
+def days_text(days):
+    return ", ".join(str(d) for d in days) if days else "-"
+
+
+# =====================================================================
+# 7. HALAMAN
+# =====================================================================
+def dash_th():
+    st.caption("Rangkuman pencapaian pemeriksaan suhu & kelembaban (3x sehari: 08.00 · 14.00 · 22.00)")
+    ruang, m, y = filter_bar("db", room_names(), "Ruangan")
+    an = analyze(ruang, y, m)
+    std = an["std"]
+    if an["due"] == 0:
+        st.info("Belum ada slot pengukuran yang jatuh tempo pada bulan ini.")
+    st.markdown("""
+    <div class='kp'>
+      <div class='kc'><div class='t'>Persentase pengisian</div><div class='v'>{pf:.0f}%</div><div class='s'>{fd} data terisi dari {d} slot jatuh tempo</div></div>
+      <div class='kc' style='border-top-color:#2e9e5b'><div class='t'>Suhu dalam batas ({lo:g}&ndash;{hi:g} &deg;C)</div><div class='v' style='color:#2e9e5b'>{po:.0f}%</div><div class='s'>{o} dari {f} data terisi</div></div>
+      <div class='kc' style='border-top-color:#2e9e5b'><div class='t'>Kelembaban dalam batas ({hl:g}&ndash;{hh:g} %)</div><div class='v' style='color:#2e9e5b'>{ph:.0f}%</div><div class='s'>{ho} dari {f} data terisi</div></div>
+      <div class='kc' style='border-top-color:#d64545'><div class='t'>Suhu DI ATAS batas</div><div class='v' style='color:#d64545'>{hi_n}</div><div class='s'>slot pengukuran</div></div>
+      <div class='kc' style='border-top-color:#f0a81c'><div class='t'>Suhu di bawah batas</div><div class='v' style='color:#d98e00'>{lo_n}</div><div class='s'>slot pengukuran</div></div>
+      <div class='kc' style='border-top-color:#9aa5b1'><div class='t'>Slot kosong / belum diisi</div><div class='v' style='color:#667'>{e}</div><div class='s'>{fe} tanggal kosong total</div></div>
+    </div>""".format(pf=an["pct_fill"], f=an["filled"], fd=an["filled_due"], d=an["due"], lo=std["t_lo"], hi=std["t_hi"], po=an["pct_ok"], o=an["ok"],
+                     hl=std["h_lo"], hh=std["h_hi"], ph=an["pct_hum"], ho=an["hum_ok"],
+                     hi_n=len(an["high"]), lo_n=len(an["low"]), e=an["n_empty"], fe=len(an["full_empty"])), unsafe_allow_html=True)
+
+    head = "<tr><th></th>" + "".join("<th>{}</th>".format(d) for d in range(1, an["n"] + 1)) + "</tr>"
+    body = ""
+    for s in "PSM":
+        body += "<tr><td class='l'>{} ({:02d}.00)</td>".format(SHIFT_NAME[s], SHIFT_HOUR[s])
+        for d in range(1, an["n"] + 1):
+            c = an["slots"][(d, s)]
+            stt = c["state"]
+            tip = {"ok": "{:g}°C normal", "high": "{:g}°C DI ATAS batas", "low": "{:g}°C di bawah batas"}.get(stt, "")
+            tip = "Tgl {} {}: ".format(d, SHIFT_NAME[s]) + (tip.format(c["t"]) if tip else ("KOSONG" if stt == "empty" else "belum jatuh tempo"))
+            txt = {"ok": "&#10003;", "high": "&#9650;", "low": "&#9660;", "empty": "&ndash;", "future": ""}[stt]
+            body += "<td class='s-{}' title='{}'>{}</td>".format(stt, tip, txt)
+        body += "</tr>"
+    st.markdown("<div style='overflow-x:auto'><table class='cal'>{}{}</table></div>".format(head, body), unsafe_allow_html=True)
+    st.markdown("<div class='lg2'><span><i class='s-ok'></i>Dalam batas</span><span><i class='s-high'></i>&#9650; Di atas batas</span><span><i class='s-low'></i>&#9660; Di bawah batas</span>"
+                "<span><i class='s-empty'></i>Kosong (belum diisi)</span><span><i class='s-future'></i>Belum jatuh tempo</span></div>", unsafe_allow_html=True)
+
+    hi_days = sorted(set(d for d, _, _ in an["high"]))
+    lo_days = sorted(set(d for d, _, _ in an["low"]))
+    emp_days = sorted(an["empty_by_day"].keys())
+    st.markdown("<div class='box'><b>Ringkasan {} - {} {}</b><br>"
+                "&#128308; Tanggal dengan suhu <b>di atas batas</b> ({:g} &deg;C): <b>{}</b><br>"
+                "&#128992; Tanggal dengan suhu di bawah batas ({:g} &deg;C): <b>{}</b><br>"
+                "&#9899; Tanggal yang ada <b>slot kosong</b>: <b>{}</b><br>"
+                "&#9898; Tanggal <b>kosong total</b> (Pagi, Siang, Malam belum diisi): <b>{}</b></div>".format(
+                    escape(ruang), BLN[m - 1], y, std["t_hi"], days_text(hi_days), std["t_lo"], days_text(lo_days), days_text(emp_days), days_text(an["full_empty"])),
+                unsafe_allow_html=True)
+
+    data = month_data(ruang, y, m)
+    if data:
+        per_day = {}
+        for (d, _s), e in data.items():
+            per_day.setdefault(d, []).append(e)
+        dfc = pd.DataFrame({"Tanggal": sorted(per_day),
+                            "Suhu rata-rata (°C)": [sum(x["suhu"] for x in per_day[d]) / len(per_day[d]) for d in sorted(per_day)],
+                            "Kelembaban rata-rata (%)": [sum(x["hum"] for x in per_day[d]) / len(per_day[d]) for d in sorted(per_day)]}).set_index("Tanggal")
+        g1, g2 = st.columns(2)
+        g1.markdown("**Tren suhu harian (rata-rata)**")
+        g1.line_chart(dfc[["Suhu rata-rata (°C)"]])
+        g2.markdown("**Tren kelembaban harian (rata-rata)**")
+        g2.line_chart(dfc[["Kelembaban rata-rata (%)"]])
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown("**Suhu di atas batas**")
+        st.dataframe(pd.DataFrame([dict(Tanggal=d, Shift=SHIFT_NAME[s], **{"Suhu (°C)": v, "Batas atas": std["t_hi"], "Selisih": round(v - std["t_hi"], 1)}) for d, s, v in an["high"]]
+                                  or [dict(Tanggal="-", Shift="-", **{"Suhu (°C)": "-", "Batas atas": "-", "Selisih": "-"})]), hide_index=True)
+        if an["low"]:
+            st.markdown("**Suhu di bawah batas**")
+            st.dataframe(pd.DataFrame([dict(Tanggal=d, Shift=SHIFT_NAME[s], **{"Suhu (°C)": v, "Batas bawah": std["t_lo"], "Selisih": round(v - std["t_lo"], 1)}) for d, s, v in an["low"]]), hide_index=True)
+    with c2:
+        st.markdown("**Tanggal & shift kosong**")
+        st.dataframe(pd.DataFrame([dict(Tanggal=d, **{"Shift kosong": ", ".join(SHIFT_NAME[x] for x in v), "Status": "Kosong total" if len(v) == 3 else "Sebagian"}) for d, v in sorted(an["empty_by_day"].items())]
+                                  or [dict(Tanggal="-", **{"Shift kosong": "Semua terisi", "Status": "-"})]), hide_index=True)
+    with c3:
+        st.markdown("**Kelembaban di luar batas ({:g}–{:g} %)**".format(std["h_lo"], std["h_hi"]))
+        st.dataframe(pd.DataFrame([dict(Tanggal=d, Shift=SHIFT_NAME[s], **{"Kelembaban (%)": v, "Keterangan": "Di atas" if k == "high" else "Di bawah"}) for d, s, v, k in an["hum_bad"]]
+                                  or [dict(Tanggal="-", Shift="-", **{"Kelembaban (%)": "-", "Keterangan": "-"})]), hide_index=True)
+
+    st.markdown("**Rekap semua ruangan - {} {}**".format(BLN[m - 1], y))
+    rows = []
+    for rn in room_names():
+        a = analyze(rn, y, m)
+        rows.append({"Ruangan": rn, "% Pengisian": round(a["pct_fill"]), "% Suhu dalam batas": round(a["pct_ok"]), "% Kelembaban dalam batas": round(a["pct_hum"]),
+                     "Suhu di atas batas": len(a["high"]), "Suhu di bawah batas": len(a["low"]), "Slot kosong": a["n_empty"],
+                     "Tanggal kosong total": days_text(a["full_empty"])})
+    st.dataframe(pd.DataFrame(rows), hide_index=True)
+
+
+def dash_qc():
+    st.caption("Rangkuman checklist kegiatan pemeliharaan harian peralatan radiologi")
+    m, y = month_year_bar("qd")
+    devs = devices()
+    ans = {d["nama"]: qc_analyze(d, y, m) for d in devs}
+    tot_counted = sum(a["counted"] for a in ans.values())
+    tot_full = sum(a["full"] for a in ans.values())
+    tot_idone = sum(a["item_done"] for a in ans.values())
+    tot_itotal = sum(a["item_total"] for a in ans.values())
+    tot_empty = sum(a["n_empty"] for a in ans.values())
+    tot_part = sum(a["n_part"] for a in ans.values())
+    if tot_counted == 0:
+        st.info("Belum ada hari yang jatuh tempo / terisi pada bulan ini.")
+    st.markdown("""
+    <div class='kp'>
+      <div class='kc'><div class='t'>Hari checklist lengkap</div><div class='v'>{pf:.0f}%</div><div class='s'>{full} dari {cnt} hari-alat jatuh tempo</div></div>
+      <div class='kc' style='border-top-color:#2e9e5b'><div class='t'>Kegiatan terselesaikan</div><div class='v' style='color:#2e9e5b'>{pi:.0f}%</div><div class='s'>{idn} dari {itot} kegiatan harian</div></div>
+      <div class='kc' style='border-top-color:#f0a81c'><div class='t'>Hari terisi sebagian</div><div class='v' style='color:#d98e00'>{part}</div><div class='s'>hari-alat belum lengkap</div></div>
+      <div class='kc' style='border-top-color:#9aa5b1'><div class='t'>Hari kosong</div><div class='v' style='color:#667'>{emp}</div><div class='s'>hari-alat belum diisi</div></div>
+    </div>""".format(pf=(tot_full / tot_counted * 100 if tot_counted else 0), full=tot_full, cnt=tot_counted,
+                     pi=(tot_idone / tot_itotal * 100 if tot_itotal else 0), idn=tot_idone, itot=tot_itotal, part=tot_part, emp=tot_empty),
+                unsafe_allow_html=True)
+
+    n = calendar.monthrange(y, m)[1]
+    head = "<tr><th></th>" + "".join("<th>{}</th>".format(d) for d in range(1, n + 1)) + "</tr>"
+    body = ""
+    cls = {"full": "ok", "part": "low", "empty": "empty", "future": "future"}
+    txt = {"full": "&#10003;", "part": "&#189;", "empty": "&ndash;", "future": ""}
+    for dev in devs:
+        a = ans[dev["nama"]]
+        body += "<tr><td class='l'>{}</td>".format(escape(dev["nama"]))
+        for d in range(1, n + 1):
+            c = a["days"][d]
+            tip = "{} tgl {}: {}/{} kegiatan".format(escape(dev["nama"]), d, c["done"], c["total"]) if c["state"] != "future" else "belum jatuh tempo"
+            body += "<td class='s-{}' title='{}'>{}</td>".format(cls[c["state"]], tip, txt[c["state"]])
+        body += "</tr>"
+    st.markdown("<div style='overflow-x:auto'><table class='cal'>{}{}</table></div>".format(head, body), unsafe_allow_html=True)
+    st.markdown("<div class='lg2'><span><i class='s-ok'></i>&#10003; Lengkap</span><span><i class='s-low'></i>&#189; Sebagian</span>"
+                "<span><i class='s-empty'></i>Kosong (belum diisi)</span><span><i class='s-future'></i>Belum jatuh tempo</span></div>", unsafe_allow_html=True)
+
+    st.markdown("**Rekap semua peralatan - {} {}**".format(BLN[m - 1], y))
+    st.dataframe(pd.DataFrame([{"Peralatan": d["nama"], "Hari lengkap": ans[d["nama"]]["full"], "Hari jatuh tempo": ans[d["nama"]]["counted"],
+                                "% Hari lengkap": round(ans[d["nama"]]["pct_full"]), "% Kegiatan selesai": round(ans[d["nama"]]["pct_item"]),
+                                "Hari sebagian": ans[d["nama"]]["n_part"], "Hari kosong": ans[d["nama"]]["n_empty"]} for d in devs]), hide_index=True)
+
+    pilih = st.selectbox("Detail kegiatan yang belum dikerjakan - pilih peralatan", [d["nama"] for d in devs], key="qd_detail")
+    a = ans[pilih]
+    rows = [{"Tanggal": d, "Status": "Kosong" if s == "empty" else "Sebagian", "Kegiatan belum dikerjakan": "; ".join(ms) if s == "part" else "Semua kegiatan"} for d, s, ms in a["missing"]]
+    st.dataframe(pd.DataFrame(rows or [{"Tanggal": "-", "Status": "-", "Kegiatan belum dikerjakan": "Semua terisi lengkap"}]), hide_index=True)
+
+
+def page_dashboard():
+    header()
+    bad = abnormal_today()
+    if bad:
+        st.markdown("<div class='alert'><b>&#9888; Hubungi teknisi / maintenance</b> - pengukuran hari ini di luar batas normal:<br>{}</div>".format("<br>".join(bad)), unsafe_allow_html=True)
+    t1, t2 = st.tabs(["🌡️ Suhu & Kelembaban", "🛠️ QC Peralatan"])
+    with t1:
+        dash_th()
+    with t2:
+        dash_qc()
+
+
+def page_input_th():
+    header()
+    st.caption("Input suhu & kelembaban harian - {}".format(FORM_CODE_TH))
+    cfg = load_cfg()
+    left, right = st.columns([2.2, 1], gap="large")
+    with left:
+        ruang = st.selectbox("Ruangan *", room_names(), key="in_ruang")
+        std = room_std(ruang)
+        c1, c2 = st.columns(2)
+        tgl = c1.date_input("Tanggal pengukuran *", value=TODAY(), max_value=TODAY(), key="in_tgl")
+        shift_key = c2.radio("Jam pemantauan *", list(SHIFT_LABEL.keys()), format_func=lambda k: SHIFT_LABEL[k], horizontal=True, key="in_shift")
+        c3, c4 = st.columns(2)
+        suhu = c3.number_input("Suhu (°C) [standar {:g}–{:g}] *".format(std["t_lo"], std["t_hi"]), value=None, min_value=0.0, max_value=60.0, step=0.1,
+                               format="%.1f", placeholder="hasil baca termometer", key="in_suhu")
+        hum = c4.number_input("Kelembaban (%) [standar {:g}–{:g}] *".format(std["h_lo"], std["h_hi"]), value=None, min_value=0.0, max_value=100.0, step=1.0,
+                              format="%.0f", placeholder="hasil baca higrometer", key="in_hum")
+        ts = classify(suhu, std["t_lo"], std["t_hi"]) if suhu is not None else None
+        hs = classify(hum, std["h_lo"], std["h_hi"]) if hum is not None else None
+        if ts:
+            c3.markdown("<div class='hint {}'>{}</div>".format("ok" if ts == "ok" else "bad", "✓ Dalam batas standar" if ts == "ok" else "⚠ {} batas standar ({:g}–{:g} °C)".format("DI ATAS" if ts == "high" else "DI BAWAH", std["t_lo"], std["t_hi"])), unsafe_allow_html=True)
+        if hs:
+            c4.markdown("<div class='hint {}'>{}</div>".format("ok" if hs == "ok" else "bad", "✓ Dalam batas standar" if hs == "ok" else "⚠ {} batas standar ({:g}–{:g} %)".format("DI ATAS" if hs == "high" else "DI BAWAH", std["h_lo"], std["h_hi"])), unsafe_allow_html=True)
+        petugas = st.selectbox("Nama staff (inisial) *", cfg["staff"], key="in_petugas")
+        abn = (ts is not None and ts != "ok") or (hs is not None and hs != "ok")
+        temuan, tindakan = "", ""
+        if abn:
+            st.error("Di luar batas normal - segera hubungi teknisi / maintenance.")
+            temuan = st.text_area("Temuan ketidaksesuaian * (wajib karena di luar batas standar)", key="in_temuan")
+            tindakan = st.selectbox("Tindakan korektif *", ["Lapor Teknisi AC / Maintenance", "Pengaturan AC / Dehumidifier", "Lainnya"], key="in_tindakan")
+        ada = load_entries()
+        dup = len(ada[(ada["ruang"] == ruang) & (ada["tanggal"] == tgl.isoformat()) & (ada["shift"] == shift_key)]) > 0
+        timpa = True
+        if dup:
+            st.warning("Data {} - {} - {} sudah ada.".format(ruang, tgl.strftime("%d/%m/%Y"), SHIFT_NAME[shift_key]))
+            timpa = st.checkbox("Timpa data yang sudah ada", key="in_timpa")
+        if st.button("Simpan data suhu & kelembaban", type="primary", key="in_save", disabled=(dup and not timpa)):
+            if suhu is None or hum is None:
+                st.error("Suhu dan kelembaban wajib diisi.")
+            elif abn and not temuan.strip():
+                st.error("Kolom Temuan wajib diisi karena suhu/kelembaban di luar batas standar.")
+            else:
+                save_entry(ruang=ruang, tanggal=tgl.isoformat(), shift=shift_key, suhu=suhu, kelembapan=hum, petugas=petugas,
+                           status="Abnormal" if abn else "Normal", temuan=temuan, tindakan=tindakan)
+                st.success("Data tersimpan: {} - {} - {} ({} °C / {} %).".format(ruang, tgl.strftime("%d/%m/%Y"), SHIFT_NAME[shift_key], fnum(suhu), fnum(hum)))
+                st.toast("Data berhasil disimpan", icon="✅")
+    with right:
+        st.markdown("<div class='box'><b>Panduan pengisian</b><br>1. Pilih ruangan, tanggal, dan jam (08.00 · 14.00 · 22.00).<br>2. Isi suhu & kelembaban sesuai hasil baca termometer/higrometer ruangan.<br>3. Pilih inisial staff.<br>"
+                    "4. Bila di luar batas standar, temuan & tindakan korektif wajib diisi dan segera hubungi teknisi - akan tampil di bagian <i>Temuan</i> pada formulir.<br>5. Cek hasilnya di menu Dashboard atau Download.<br>"
+                    "<br>Suhu & kelembaban yang diinput otomatis menandai 2 kegiatan pertama pada checklist QC peralatan terkait.</div>", unsafe_allow_html=True)
+    st.markdown("**Data terakhir - {}**".format(ruang))
+    df = load_entries()
+    df = df[df["ruang"] == ruang]
+    if len(df):
+        df = df.sort_values("id", key=lambda s: s.astype(int), ascending=False).head(15)
+        st.dataframe(df[["id", "tanggal", "shift", "suhu", "kelembapan", "petugas", "status", "temuan"]], hide_index=True)
+        cc1, cc2 = st.columns([1, 3])
+        did = cc1.selectbox("Hapus data ID", list(df["id"]), key="in_del")
+        if cc2.button("Hapus data terpilih", key="in_del_btn"):
+            delete_entry(did)
+            st.success("Data ID {} dihapus. Muat ulang halaman untuk memperbarui tabel.".format(did))
+    else:
+        st.caption("Belum ada data yang diinput untuk ruangan ini.")
+
+
+def _set_all(keys, val):
+    for k in keys:
+        st.session_state[k] = val
+
+
+def page_input_qc():
+    header()
+    st.caption("Input checklist kegiatan pemeliharaan harian peralatan radiologi")
+    cfg = load_cfg()
+    left, right = st.columns([2.2, 1], gap="large")
+    with left:
+        alat = st.selectbox("Peralatan *", [d["nama"] for d in devices()], key="qi_alat")
+        dev = dev_by_name(alat)
+        c1, c2 = st.columns(2)
+        tgl = c1.date_input("Tanggal *", value=TODAY(), max_value=TODAY(), key="qi_tgl")
+        petugas = c2.selectbox("Nama staff (inisial) *", cfg["staff"], key="qi_petugas")
+        st.caption(" · ".join("{}: {}".format(a, b) for a, b in dev["info"][:4]) + "   |   " + dev["kode"])
+        existing = qc_get(alat, tgl)
+        preset = existing["done"] if existing else set()
+        if existing:
+            st.info("Checklist {} tanggal {} sudah ada (staff {}). Menyimpan akan memperbarui data tersebut.".format(alat, tgl.strftime("%d/%m/%Y"), existing["petugas"] or "-"))
+        auto = auto_status(dev, tgl)
+        pairs = []   # (key, item) untuk item yang dicentang manual
+        for i, it in enumerate(dev["items"]):
+            if not (dev.get("ruang") and auto_kind(it)):
+                pairs.append(("qi_{}_{}_{}".format(alat, tgl.isoformat(), i), it))
+        keys = [k for k, _ in pairs]
+        b1, b2, _sp = st.columns([1, 1, 3])
+        b1.button("Centang semua", on_click=_set_all, args=(keys, True), key="qi_all")
+        b2.button("Kosongkan", on_click=_set_all, args=(keys, False), key="qi_none")
+        st.markdown("**Kegiatan harian**")
+        for i, it in enumerate(dev["items"]):
+            if dev.get("ruang") and auto_kind(it):
+                ok = auto[auto_kind(it)]
+                st.markdown("{} {} - <span style='font-size:12px;color:{}'>{}</span>".format(
+                    "✅" if ok else "⬜", escape(it), "#2e9e5b" if ok else "#d64545",
+                    "terisi otomatis dari data Suhu & Kelembaban ({})".format(escape(dev["ruang"])) if ok else "belum ada data Suhu & Kelembaban untuk tanggal ini"),
+                    unsafe_allow_html=True)
+                continue
+        for k, it in pairs:
+            if k not in st.session_state:
+                st.session_state[k] = it in preset
+            st.checkbox(it, key=k)
+        catatan = st.text_area("Catatan / temuan (opsional)", value=existing["catatan"] if existing else "", key="qi_cat_{}_{}".format(alat, tgl.isoformat()))
+        if st.button("Simpan checklist QC", type="primary", key="qi_save"):
+            hasil = {it: True for k, it in pairs if st.session_state.get(k)}
+            if not hasil and not catatan.strip() and not any(auto.values()):
+                st.error("Belum ada kegiatan yang dicentang.")
+            else:
+                save_qc(alat, tgl.isoformat(), petugas, hasil, catatan.strip())
+                st.success("Checklist tersimpan: {} - {} ({} kegiatan dicentang manual).".format(alat, tgl.strftime("%d/%m/%Y"), len(hasil)))
+                st.toast("Checklist berhasil disimpan", icon="✅")
+    with right:
+        st.markdown("<div class='box'><b>Panduan pengisian</b><br>1. Pilih peralatan dan tanggal.<br>2. Centang kegiatan yang sudah dikerjakan (atau pakai <i>Centang semua</i> bila semua selesai).<br>"
+                    "3. <i>Periksa Suhu/Kelembaban ruangan</i> terisi otomatis dari menu Input Suhu & Kelembaban. Alat <i>Mobile</i> tidak terhubung ke ruang tertentu, jadi dicentang manual.<br>"
+                    "4. Tulis catatan bila ada temuan. Catatan tampil di bawah formulir.<br>5. <i>Flat field Test (Mingguan)</i> tidak dihitung sebagai kegiatan harian di dashboard.</div>", unsafe_allow_html=True)
+    st.markdown("**Data terakhir - {}**".format(alat))
+    df = load_qc()
+    df = df[df["alat"] == alat]
+    if len(df):
+        df = df.sort_values("id", key=lambda s: s.astype(int), ascending=False).head(15).copy()
+        def _n(h):
+            try:
+                return len([1 for v in json.loads(h).values() if v])
+            except Exception:
+                return 0
+        df["jumlah dicentang"] = df["hasil"].map(_n)
+        st.dataframe(df[["id", "tanggal", "petugas", "jumlah dicentang", "catatan"]], hide_index=True)
+        cc1, cc2 = st.columns([1, 3])
+        did = cc1.selectbox("Hapus data ID", list(df["id"]), key="qi_del")
+        if cc2.button("Hapus data terpilih", key="qi_del_btn"):
+            delete_qc(did)
+            st.success("Data ID {} dihapus. Muat ulang halaman untuk memperbarui tabel.".format(did))
+    else:
+        st.caption("Belum ada checklist yang diinput untuk peralatan ini.")
+
+
+def _preview(sh, key):
+    zoom = st.slider("Zoom preview (%)", 60, 200, 100, 10, key=key)
+    wpx = int(1400 * zoom / 100)
+    components.html("<div style='overflow:auto;background:#fff;border:1px solid #d5dbe3'>{}</div>".format(sheet_to_svg(sh, wpx)),
+                    height=int(wpx * sh.height / sh.width) + 30, scrolling=True)
+
+
+def page_download():
+    header()
+    st.caption("Download formulir resmi (PDF A4 landscape) dan data (CSV)")
+    t1, t2 = st.tabs(["🌡️ Form Suhu & Kelembaban", "🛠️ Form Checklist QC Peralatan"])
+    with t1:
+        ruang, m, y = filter_bar("dl", room_names(), "Ruangan")
+        sh = build_th_form(ruang, y, m, month_data(ruang, y, m))
+        _preview(sh, "dl_zoom")
+        fname = "Form_Suhu_Kelembaban_{}_{}_{:02d}".format(ruang.replace(" ", "_"), y, m)
+        c1, c2, c3 = st.columns(3)
+        try:
+            c1.download_button("⬇️ PDF (ruangan ini)", sheets_to_pdf([sh], "Pemeriksaan Suhu & Kelembaban - " + ruang), fname + ".pdf", "application/pdf", key="dl_pdf")
+            allsh = [build_th_form(rn, y, m, month_data(rn, y, m)) for rn in room_names()]
+            c2.download_button("⬇️ PDF (semua ruangan)", sheets_to_pdf(allsh, "Pemeriksaan Suhu & Kelembaban - Semua Ruangan"),
+                               "Form_Suhu_Kelembaban_SEMUA_{}_{:02d}.pdf".format(y, m), "application/pdf", key="dl_pdf_all")
+        except ImportError:
+            st.error("Library reportlab belum terpasang. Jalankan:  pip install reportlab")
+        rows = [{"Ruang": ruang, "Tanggal": dt.date(y, m, d).isoformat(), "Jam": "{:02d}.00".format(SHIFT_HOUR[s]), "Shift": SHIFT_NAME[s],
+                 "Suhu (°C)": e["suhu"], "Kelembaban (%)": e["hum"], "Staff": e["petugas"], "Temuan": e["ket"]}
+                for (d, s), e in sorted(month_data(ruang, y, m).items())]
+        c3.download_button("⬇️ Data (CSV)", pd.DataFrame(rows).to_csv(index=False).encode("utf-8-sig"), fname + ".csv", "text/csv", key="dl_csv")
+        st.caption("Format mengikuti {}: grafik titik suhu (16-27 °C) dan kelembaban (10-100 %), pita merah muda = batas normal, titik merah = di luar batas.".format(FORM_CODE_TH))
+    with t2:
+        alat, m2, y2 = filter_bar("dq", [d["nama"] for d in devices()], "Peralatan")
+        dev = dev_by_name(alat)
+        sh2 = build_qc_form(dev, y2, m2, qc_month(dev, y2, m2))
+        _preview(sh2, "dq_zoom")
+        fname2 = "Checklist_QC_{}_{}_{:02d}".format(alat.replace(" ", "_"), y2, m2)
+        q1, q2, q3 = st.columns(3)
+        try:
+            q1.download_button("⬇️ PDF (peralatan ini)", sheets_to_pdf([sh2], "Checklist Pemeliharaan - " + alat), fname2 + ".pdf", "application/pdf", key="dq_pdf")
+            allq = [build_qc_form(d, y2, m2, qc_month(d, y2, m2)) for d in devices()]
+            q2.download_button("⬇️ PDF (semua peralatan)", sheets_to_pdf(allq, "Checklist Pemeliharaan - Semua Peralatan"),
+                               "Checklist_QC_SEMUA_{}_{:02d}.pdf".format(y2, m2), "application/pdf", key="dq_pdf_all")
+        except ImportError:
+            st.error("Library reportlab belum terpasang. Jalankan:  pip install reportlab")
+        qd = qc_month(dev, y2, m2)
+        rows2 = []
+        for d in sorted(qd):
+            e = qd[d]
+            rows2.append({"Alat": alat, "Tanggal": dt.date(y2, m2, d).isoformat(), "Staff": e["petugas"],
+                          "Kegiatan selesai": len([i for i in dev["items"] if i in e["done"]]), "Total kegiatan": len(dev["items"]),
+                          "Belum dikerjakan": "; ".join(i for i in dev["items"] if i not in e["done"] and is_daily(i)), "Catatan": e["catatan"]})
+        q3.download_button("⬇️ Data (CSV)", pd.DataFrame(rows2).to_csv(index=False).encode("utf-8-sig"), fname2 + ".csv", "text/csv", key="dq_csv")
+        st.caption("Format mengikuti {} - centang = kegiatan selesai. Kegiatan suhu & kelembaban terisi otomatis dari data ruang terkait.".format(dev["kode"]))
+
+
+# =====================================================================
+# 8. NAVIGASI & SIDEBAR
+# =====================================================================
+pg = st.navigation([
+    st.Page(page_dashboard, title="1. Dashboard", icon="📊", url_path="dashboard", default=True),
+    st.Page(page_input_th, title="2. Input Suhu & Kelembaban", icon="🌡️", url_path="input-suhu"),
+    st.Page(page_input_qc, title="3. Input QC Peralatan", icon="🛠️", url_path="input-qc"),
+    st.Page(page_download, title="4. Download Formulir", icon="⬇️", url_path="download"),
+])
+
+with st.sidebar:
+    with st.expander("Pengaturan ruang & staff"):
+        cfg = load_cfg()
+        nm = st.text_input("Nama ruang baru / ruang yang diubah", key="cfg_nm")
+        c1, c2 = st.columns(2)
+        tl = c1.number_input("Suhu min (°C)", value=20.0, step=0.5, key="cfg_tl")
+        th = c2.number_input("Suhu maks (°C)", value=24.0, step=0.5, key="cfg_th")
+        hl = c1.number_input("Kelembaban min (%)", value=30.0, step=1.0, key="cfg_hl")
+        hh = c2.number_input("Kelembaban maks (%)", value=70.0, step=1.0, key="cfg_hh")
+        if st.button("Simpan ruang", key="cfg_add"):
+            if nm.strip():
+                cfg["rooms"] = [r for r in cfg["rooms"] if r["nama"] != nm.strip()] + [dict(nama=nm.strip(), t_lo=tl, t_hi=th, h_lo=hl, h_hi=hh, tekanan=False)]
+                save_cfg(cfg)
+                st.success("Ruang disimpan.")
+        stf = st.text_input("Inisial staff (pisahkan koma)", value=",".join(cfg["staff"]), key="cfg_staff")
+        if st.button("Simpan staff", key="cfg_staff_btn"):
+            cfg["staff"] = [x.strip().upper() for x in stf.split(",") if x.strip()] or cfg["staff"]
+            save_cfg(cfg)
+            st.success("Staff disimpan.")
+    with st.expander("Backup & restore data"):
+        st.caption("Penyimpanan CSV di Streamlit Cloud bisa hilang saat aplikasi restart/redeploy. Backup rutin (mis. akhir bulan), lalu restore bila perlu.")
+        for label, path, cols, k in (("Suhu & kelembaban", ENTRY_FILE, ECOLS, "th"), ("QC peralatan", QC_FILE, QCOLS, "qc")):
+            st.download_button("⬇️ Backup {} (CSV)".format(label), _read(path, cols).to_csv(index=False).encode("utf-8-sig"),
+                               os.path.basename(path), "text/csv", key="bk_" + k)
+            up = st.file_uploader("Restore {}".format(label), type="csv", key="up_" + k)
+            if up is not None and st.button("Restore {} (menimpa data saat ini)".format(label), key="rs_" + k):
+                try:
+                    new = pd.read_csv(up, dtype=str, encoding="utf-8-sig").fillna("")
+                    miss = [c for c in cols if c not in new.columns]
+                    if miss:
+                        st.error("Kolom tidak lengkap: " + ", ".join(miss))
+                    else:
+                        os.makedirs(DATA_DIR, exist_ok=True)
+                        new[cols].to_csv(path, index=False)
+                        st.success("Data {} dipulihkan ({} baris).".format(label, len(new)))
+                except Exception as ex:
+                    st.error("Gagal restore: {}".format(ex))
+    st.caption("{} · RAD 2209.xx/00".format(FORM_CODE_TH))
+
+pg.run()
