@@ -1324,7 +1324,10 @@ def page_ruang():
     if qp in names:
         ruang = qp
     else:
-        st.warning("Ruangan '{}' tidak dikenali. Pilih ruangan di bawah.".format(qp)) if qp else st.info("Buka halaman ini dengan scan QR code di ruangan, atau pilih ruangan secara manual.")
+        if qp:
+            st.warning("Ruangan '{}' tidak dikenali. Pilih ruangan di bawah.".format(qp))
+        else:
+            st.info("Buka halaman ini dengan scan QR code di ruangan, atau pilih ruangan secara manual.")
         ruang = st.selectbox("Ruangan *", names, key="qr_pilih")
     n = now()
     tgl = n.date()
