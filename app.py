@@ -6,12 +6,14 @@ DIGITAL MONITORING SHAG - Siloam Hospitals Agora | Instalasi Radiologi
 """
 import base64
 import calendar
+import hmac
 import datetime as dt
 import io
 import json
 import math
 import os
 import textwrap
+import time
 import urllib.parse
 import urllib.request
 from xml.sax.saxutils import escape
@@ -25,6 +27,7 @@ st.set_page_config(
     page_icon="🏥",
     layout="wide",
     initial_sidebar_state="expanded",
+    menu_items={"Get help": None, "Report a bug": None, "About": None},
 )
 
 # =====================================================================
@@ -110,7 +113,7 @@ _DEVICES = [
 
 DEFAULT_CFG = {
     "rooms": [dict(nama=n, tekanan=False, t_lo=20.0, t_hi=24.0, h_lo=float(hl), h_hi=float(hh)) for n, hl, hh in _ROOMS],
-    "staff": ["SL", "AG", "AY", "WT", "FF"],
+    "staff": ["RF", "NR", "AC", "AP", "AM"],
     "devices": _DEVICES,
 }
 
@@ -986,6 +989,8 @@ html, body, [class*="css"], .stApp, .stMarkdown, .stButton, .stTextInput,
 [data-testid=stSidebar]{background:#ffffff !important;color:#111 !important}
 [data-testid="stHeader"]{background:transparent !important}
 .block-container{padding-top:1.2rem;max-width:100%}
+[data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], [data-testid="stAppDeployButton"],
+.stAppDeployButton, #MainMenu, footer, [data-testid="stMainMenu"]{display:none !important;visibility:hidden !important}
 button[kind="primary"]{background:#0b5cab;border-color:#0b5cab}
 
 .kp{display:flex;gap:12px;margin:6px 0 14px;flex-wrap:wrap}.kc{flex:1;min-width:150px;background:#fff;border-radius:8px;padding:12px 16px;box-shadow:0 1px 3px #0001;border-top:4px solid #0b5cab}
@@ -1046,6 +1051,42 @@ def filter_bar(prefix, options, label):
 
 def days_text(days):
     return ", ".join(str(d) for d in days) if days else "-"
+
+
+
+# =====================================================================
+# 6b. MODE AUTHOR (password di Streamlit Secrets: AUTHOR_PASSWORD)
+# =====================================================================
+def _author_secret():
+    try:
+        v = st.secrets.get("AUTHOR_PASSWORD")
+    except Exception:
+        v = None
+    return str(v) if v else os.environ.get("AUTHOR_PASSWORD", "")
+
+
+def is_author():
+    return bool(st.session_state.get("is_author"))
+
+
+def author_box():
+    """Kotak login author di sidebar. Tanpa AUTHOR_PASSWORD di Secrets, tidak ada yang bisa masuk."""
+    with st.sidebar.expander("🔐 Author"):
+        if is_author():
+            st.success("Mode author aktif")
+            if st.button("Keluar", key="auth_out"):
+                st.session_state["is_author"] = False
+                st.rerun()
+            return
+        pw = st.text_input("Password author", type="password", key="auth_pw")
+        if st.button("Masuk", key="auth_btn"):
+            secret = _author_secret()
+            if secret and hmac.compare_digest(pw.encode("utf-8"), secret.encode("utf-8")):
+                st.session_state["is_author"] = True
+                st.rerun()
+            else:
+                time.sleep(1)
+                st.error("Password salah.")
 
 
 # =====================================================================
@@ -1353,6 +1394,9 @@ def page_ruang():
 
 def page_input_th():
     header()
+    if not is_author():
+        st.error("Halaman ini hanya untuk author.")
+        return
     st.caption("Input manual suhu & kelembaban (untuk koreksi / mengisi tanggal sebelumnya) - {}".format(FORM_CODE_TH))
     cfg = load_cfg()
     left, right = st.columns([2.2, 1], gap="large")
@@ -1385,6 +1429,9 @@ def page_input_th():
 
 def page_input_qc():
     header()
+    if not is_author():
+        st.error("Halaman ini hanya untuk author.")
+        return
     st.caption("Input manual checklist QC (untuk koreksi / mengisi tanggal sebelumnya)")
     cfg = load_cfg()
     left, right = st.columns([2.2, 1], gap="large")
@@ -1423,9 +1470,9 @@ def page_input_qc():
         st.caption("Belum ada checklist yang diinput untuk peralatan ini.")
 
 
-def _preview(sh, key, base_px=1400):
-    zoom = st.slider("Zoom preview (%)", 60, 200, 100, 10, key=key)
-    wpx = int(base_px * zoom / 100)
+def _preview(sh, base_px=1400, scale=0.6):
+    """Preview formulir dengan ukuran tetap (60%)."""
+    wpx = int(base_px * scale)
     components.html("<div style='overflow:auto;background:#fff;border:1px solid #d5dbe3'>{}</div>".format(sheet_to_svg(sh, wpx)),
                     height=int(wpx * sh.height / sh.width) + 30, scrolling=True)
 
@@ -1437,7 +1484,7 @@ def page_download():
     with t1:
         ruang, m, y = filter_bar("dl", room_names(), "Ruangan")
         sh = build_th_form(ruang, y, m, month_data(ruang, y, m))
-        _preview(sh, "dl_zoom")
+        _preview(sh)
         fname = "Form_Suhu_Kelembaban_{}_{}_{:02d}".format(ruang.replace(" ", "_"), y, m)
         c1, c2, c3 = st.columns(3)
         try:
@@ -1456,7 +1503,7 @@ def page_download():
         alat, m2, y2 = filter_bar("dq", [d["nama"] for d in devices()], "Peralatan")
         dev = dev_by_name(alat)
         sh2 = build_qc_form(dev, y2, m2, qc_month(dev, y2, m2))
-        _preview(sh2, "dq_zoom")
+        _preview(sh2)
         fname2 = "Checklist_QC_{}_{}_{:02d}".format(alat.replace(" ", "_"), y2, m2)
         q1, q2, q3 = st.columns(3)
         try:
@@ -1492,7 +1539,7 @@ def download_qr_tab():
         save_cfg(cfg)
         st.success("Alamat disimpan.")
     sheets = build_qr_sheets(base)
-    _preview(sheets[0], "qr_zoom", 600)
+    _preview(sheets[0], 900)
     st.download_button("⬇️ PDF stiker QR (semua ruangan, A4)", sheets_to_pdf(sheets, "QR Code Ruangan - Siloam Hospitals Agora", portrait=True),
                        "QR_Ruangan_SHAG.pdf", "application/pdf", key="qr_pdf")
     st.dataframe(pd.DataFrame([{"Ruangan": r, "Checklist QC": ", ".join(d["nama"] for d in room_devices(r)) or "-", "Link": room_url(base, r)} for r in room_names()]),
@@ -1504,51 +1551,53 @@ def download_qr_tab():
 # =====================================================================
 # 8. NAVIGASI & SIDEBAR
 # =====================================================================
-pg = st.navigation([
-    st.Page(page_dashboard, title="1. Dashboard", icon="📊", url_path="dashboard", default=True),
-    st.Page(page_ruang, title="2. Isi Ruangan (QR)", icon="🔳", url_path="ruang"),
-    st.Page(page_input_th, title="3. Input Suhu (manual)", icon="🌡️", url_path="input-suhu"),
-    st.Page(page_input_qc, title="4. Input QC (manual)", icon="🛠️", url_path="input-qc"),
-    st.Page(page_download, title="5. Download & QR", icon="⬇️", url_path="download"),
-])
+_pages = [(page_dashboard, "Dashboard", "📊", "dashboard", True),
+          (page_ruang, "Isi Ruangan (QR)", "🔳", "ruang", False)]
+if is_author():   # input manual (koreksi / tanggal mundur / hapus data) hanya untuk author
+    _pages.append((page_input_th, "Input Suhu (manual)", "🌡️", "input-suhu", False))
+    _pages.append((page_input_qc, "Input QC (manual)", "🛠️", "input-qc", False))
+_pages.append((page_download, "Download & QR", "⬇️", "download", False))
+pg = st.navigation([st.Page(f, title="{}. {}".format(i + 1, t), icon=ic, url_path=u, default=d) for i, (f, t, ic, u, d) in enumerate(_pages)])
 
 with st.sidebar:
-    with st.expander("Pengaturan ruang & staff"):
-        cfg = load_cfg()
-        nm = st.text_input("Nama ruang baru / ruang yang diubah", key="cfg_nm")
-        c1, c2 = st.columns(2)
-        tl = c1.number_input("Suhu min (°C)", value=20.0, step=0.5, key="cfg_tl")
-        th = c2.number_input("Suhu maks (°C)", value=24.0, step=0.5, key="cfg_th")
-        hl = c1.number_input("Kelembaban min (%)", value=30.0, step=1.0, key="cfg_hl")
-        hh = c2.number_input("Kelembaban maks (%)", value=70.0, step=1.0, key="cfg_hh")
-        if st.button("Simpan ruang", key="cfg_add"):
-            if nm.strip():
-                cfg["rooms"] = [r for r in cfg["rooms"] if r["nama"] != nm.strip()] + [dict(nama=nm.strip(), t_lo=tl, t_hi=th, h_lo=hl, h_hi=hh, tekanan=False)]
+    if is_author():
+        with st.expander("Pengaturan ruang & staff"):
+            cfg = load_cfg()
+            nm = st.text_input("Nama ruang baru / ruang yang diubah", key="cfg_nm")
+            c1, c2 = st.columns(2)
+            tl = c1.number_input("Suhu min (°C)", value=20.0, step=0.5, key="cfg_tl")
+            th = c2.number_input("Suhu maks (°C)", value=24.0, step=0.5, key="cfg_th")
+            hl = c1.number_input("Kelembaban min (%)", value=30.0, step=1.0, key="cfg_hl")
+            hh = c2.number_input("Kelembaban maks (%)", value=70.0, step=1.0, key="cfg_hh")
+            if st.button("Simpan ruang", key="cfg_add"):
+                if nm.strip():
+                    cfg["rooms"] = [r for r in cfg["rooms"] if r["nama"] != nm.strip()] + [dict(nama=nm.strip(), t_lo=tl, t_hi=th, h_lo=hl, h_hi=hh, tekanan=False)]
+                    save_cfg(cfg)
+                    st.success("Ruang disimpan.")
+            stf = st.text_input("Inisial staff (pisahkan koma)", value=",".join(cfg["staff"]), key="cfg_staff")
+            if st.button("Simpan staff", key="cfg_staff_btn"):
+                cfg["staff"] = [x.strip().upper() for x in stf.split(",") if x.strip()] or cfg["staff"]
                 save_cfg(cfg)
-                st.success("Ruang disimpan.")
-        stf = st.text_input("Inisial staff (pisahkan koma)", value=",".join(cfg["staff"]), key="cfg_staff")
-        if st.button("Simpan staff", key="cfg_staff_btn"):
-            cfg["staff"] = [x.strip().upper() for x in stf.split(",") if x.strip()] or cfg["staff"]
-            save_cfg(cfg)
-            st.success("Staff disimpan.")
-    with st.expander("Backup & restore data"):
-        st.caption("Penyimpanan CSV di Streamlit Cloud bisa hilang saat aplikasi restart/redeploy. Backup rutin (mis. akhir bulan), lalu restore bila perlu.")
-        for label, path, cols, k in (("Suhu & kelembaban", ENTRY_FILE, ECOLS, "th"), ("QC peralatan", QC_FILE, QCOLS, "qc")):
-            st.download_button("⬇️ Backup {} (CSV)".format(label), _read(path, cols).to_csv(index=False).encode("utf-8-sig"),
-                               os.path.basename(path), "text/csv", key="bk_" + k)
-            up = st.file_uploader("Restore {}".format(label), type="csv", key="up_" + k)
-            if up is not None and st.button("Restore {} (menimpa data saat ini)".format(label), key="rs_" + k):
-                try:
-                    new = pd.read_csv(up, dtype=str, encoding="utf-8-sig").fillna("")
-                    miss = [c for c in cols if c not in new.columns]
-                    if miss:
-                        st.error("Kolom tidak lengkap: " + ", ".join(miss))
-                    else:
-                        os.makedirs(DATA_DIR, exist_ok=True)
-                        new[cols].to_csv(path, index=False)
-                        st.success("Data {} dipulihkan ({} baris).".format(label, len(new)))
-                except Exception as ex:
-                    st.error("Gagal restore: {}".format(ex))
+                st.success("Staff disimpan.")
+        with st.expander("Backup & restore data"):
+            st.caption("Penyimpanan CSV di Streamlit Cloud bisa hilang saat aplikasi restart/redeploy. Backup rutin (mis. akhir bulan), lalu restore bila perlu.")
+            for label, path, cols, k in (("Suhu & kelembaban", ENTRY_FILE, ECOLS, "th"), ("QC peralatan", QC_FILE, QCOLS, "qc")):
+                st.download_button("⬇️ Backup {} (CSV)".format(label), _read(path, cols).to_csv(index=False).encode("utf-8-sig"),
+                                   os.path.basename(path), "text/csv", key="bk_" + k)
+                up = st.file_uploader("Restore {}".format(label), type="csv", key="up_" + k)
+                if up is not None and st.button("Restore {} (menimpa data saat ini)".format(label), key="rs_" + k):
+                    try:
+                        new = pd.read_csv(up, dtype=str, encoding="utf-8-sig").fillna("")
+                        miss = [c for c in cols if c not in new.columns]
+                        if miss:
+                            st.error("Kolom tidak lengkap: " + ", ".join(miss))
+                        else:
+                            os.makedirs(DATA_DIR, exist_ok=True)
+                            new[cols].to_csv(path, index=False)
+                            st.success("Data {} dipulihkan ({} baris).".format(label, len(new)))
+                    except Exception as ex:
+                        st.error("Gagal restore: {}".format(ex))
+    author_box()
     st.caption("{} · RAD 2209.xx/00".format(FORM_CODE_TH))
 
 pg.run()
