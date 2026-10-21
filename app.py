@@ -1092,53 +1092,84 @@ transition:transform .2s,box-shadow .2s,border-color .2s,color .2s;box-shadow:0 
 .stButton>button[kind="primary"]:hover, [data-testid="stBaseButton-primary"]:hover{box-shadow:0 12px 26px rgba(43,95,217,.45)}
 .stButton>button:disabled, .stDownloadButton>button:disabled{opacity:.45;transform:none;box-shadow:none}
 
-/* ---------- isian & dropdown (bullet drop) ---------- */
-div[data-baseweb="input"], div[data-baseweb="textarea"], div[data-baseweb="select"] > div{border-radius:12px !important;background:#fff !important;border:1.5px solid var(--line) !important;
-transition:border-color .18s,box-shadow .18s,transform .18s}
-div[data-baseweb="input"] input { color: #1c2a6b !important; -webkit-text-fill-color: #1c2a6b !important; }
-div[data-baseweb="input"]:hover, div[data-baseweb="textarea"]:hover, div[data-baseweb="select"] > div:hover{border-color:#9db8ff !important}
-div[data-baseweb="input"]:focus-within, div[data-baseweb="textarea"]:focus-within, div[data-baseweb="select"] > div:focus-within{border-color:#2b5fd9 !important;box-shadow:0 0 0 4px rgba(43,95,217,.16)}
-div[data-baseweb="select"] *{color:#1c2a6b}
-div[data-baseweb="popover"] ul[role="listbox"]{border-radius:14px;border:1px solid var(--line);padding:6px;background:#fff;box-shadow:0 16px 38px rgba(31,42,124,.20);animation:dropIn .18s ease-out}
-ul[role="listbox"]{list-style:none !important;margin:0}
-li[role="option"]{list-style:none !important;border-radius:10px;margin:2px 0;color:#1c2a6b;transition:background .12s,padding-left .12s}
-li[role="option"]:hover, li[role="option"][aria-selected="true"]{background:#eef3ff !important;color:#1f2a7c;padding-left:18px}
-li[role="option"][aria-selected="true"]{font-weight:700}
-div[role="radiogroup"] > label{background:#fff;border:1.5px solid var(--line);border-radius:999px;padding:6px 16px 6px 10px;margin-right:8px;cursor:pointer;transition:all .18s}
-div[role="radiogroup"] > label:hover{border-color:#2b5fd9;transform:translateY(-1px);box-shadow:0 6px 14px rgba(31,42,124,.12)}
-div[role="radiogroup"] > label:has(input:checked){background:linear-gradient(135deg,#1f2a7c,#2b5fd9);border-color:transparent}
-div[role="radiogroup"] > label:has(input:checked) *{color:#fff !important}
-label[data-baseweb="checkbox"]{padding:4px 8px;border-radius:10px;transition:background .15s}
-label[data-baseweb="checkbox"]:hover{background:#f5f8ff}
+/* ---------- FIX DROPDOWN & TEXT INPUT (LIGHT THEME) ---------- */
+div[data-baseweb="input"], div[data-baseweb="textarea"], div[data-baseweb="select"] > div {
+    border-radius: 12px !important; 
+    background-color: #ffffff !important; 
+    border: 1.5px solid var(--line) !important;
+    transition: border-color .18s, box-shadow .18s;
+}
+div[data-baseweb="input"] input, 
+div[data-baseweb="select"] input, 
+div[data-baseweb="select"] > div {
+    color: #1c2a6b !important; 
+    -webkit-text-fill-color: #1c2a6b !important;
+}
+div[data-baseweb="select"] svg { fill: #1c2a6b !important; }
+div[data-baseweb="input"]:hover, div[data-baseweb="textarea"]:hover, div[data-baseweb="select"] > div:hover { border-color:#9db8ff !important; }
+div[data-baseweb="input"]:focus-within, div[data-baseweb="textarea"]:focus-within, div[data-baseweb="select"] > div:focus-within { border-color:#2b5fd9 !important; box-shadow:0 0 0 4px rgba(43,95,217,.16); }
+div[data-baseweb="popover"] ul[role="listbox"] { background-color: #ffffff !important; border: 1px solid var(--line); border-radius:14px; box-shadow:0 16px 38px rgba(31,42,124,.20); padding:6px; }
+ul[role="listbox"] { list-style:none !important; margin:0; }
+li[role="option"] { background-color: #ffffff !important; color: #1c2a6b !important; border-radius:10px; margin:2px 0; transition:background .12s,padding-left .12s; }
+li[role="option"]:hover, li[role="option"][aria-selected="true"] { background-color: #eef3ff !important; color: #1f2a7c !important; padding-left:18px; }
+li[role="option"][aria-selected="true"]{font-weight:700;}
 
-/* ---------- tab (blue label style) ---------- */
+/* ---------- FIX TABS (BLUE BOX & WHITE TEXT, NO RED) ---------- */
+/* 1. Hilangkan garis bawah merah secara total */
+div[data-baseweb="tab-highlight"], 
+div[data-baseweb="tab-border"],
+[data-testid="stTabs"] div[data-baseweb="tab-highlight"],
+[data-testid="stTabs"] div[data-baseweb="tab-border"] {
+    display: none !important;
+    opacity: 0 !important;
+    height: 0px !important;
+    background: transparent !important;
+    border: none !important;
+}
+
+/* 2. Atur kontainer tab */
+[data-testid="stTabs"] [data-baseweb="tab-list"],
 div[data-baseweb="tab-list"] {
     gap: 12px !important;
-    background: transparent !important;
-    padding-bottom: 10px;
+    border-bottom: none !important;
 }
+
+/* 3. Beri background biru pada tab */
+[data-testid="stTabs"] button[role="tab"],
 button[data-baseweb="tab"] {
-    background-color: #1f2a7c !important; /* Blue background */
-    border-radius: 999px !important; /* Pill label */
+    background-color: #1f2a7c !important; /* Warna biru */
+    border-radius: 999px !important;     /* Bentuk kapsul */
     padding: 8px 24px !important;
     border: none !important;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 6px rgba(31,42,124,0.2);
+    opacity: 1 !important;
+    transition: all 0.2s ease !important;
 }
-button[data-baseweb="tab"] *, button[data-baseweb="tab"] p {
-    color: #ffffff !important; /* White text */
+
+/* 4. Paksa semua teks di dalam tab menjadi putih */
+[data-testid="stTabs"] button[role="tab"] *,
+[data-testid="stTabs"] button[role="tab"] p,
+[data-testid="stTabs"] button[role="tab"] div,
+[data-testid="stTabs"] button[role="tab"] span,
+button[data-baseweb="tab"] *,
+button[data-baseweb="tab"] p,
+button[data-baseweb="tab"] div,
+button[data-baseweb="tab"] span {
+    color: #ffffff !important; /* Teks putih */
+    -webkit-text-fill-color: #ffffff !important;
     font-weight: 600 !important;
 }
-button[data-baseweb="tab"]:hover {
-    background-color: #2b5fd9 !important;
-    transform: translateY(-1px);
-}
+
+/* 5. State Tab yang Sedang Aktif (Biru lebih gelap) */
+[data-testid="stTabs"] button[role="tab"][aria-selected="true"],
 button[data-baseweb="tab"][aria-selected="true"] {
-    background-color: #004e75 !important; /* Distinct active state (darker blue) */
-    box-shadow: 0 4px 12px rgba(0,78,117,0.4);
+    background-color: #004e75 !important; 
+    box-shadow: 0 4px 12px rgba(0,78,117,0.4) !important;
 }
-div[data-baseweb="tab-highlight"], div[data-baseweb="tab-border"] {
-    display: none !important;
+
+/* 6. Efek Hover */
+[data-testid="stTabs"] button[role="tab"]:hover,
+button[data-baseweb="tab"]:hover {
+    background-color: #2b5fd9 !important; 
 }
 
 /* PERBAIKAN WARNA EXPANDER (Author box agar terlihat) */
