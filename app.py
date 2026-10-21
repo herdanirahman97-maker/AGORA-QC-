@@ -1031,7 +1031,7 @@ html, body, [class*="css"], .stApp, .stMarkdown, .stButton, .stTextInput,
 .hero::before{content:'';position:absolute;left:0;right:0;top:0;height:5px;background:linear-gradient(90deg,#1f2a7c,#2b5fd9,#27b5c9,#ffb81c,#2b5fd9,#1f2a7c);background-size:300% 100%;animation:shimmer 6s linear infinite}
 .hero .blob{position:absolute;border-radius:50%;filter:blur(38px);opacity:.35;pointer-events:none}
 .hero .b1{width:220px;height:220px;background:#9db8ff;left:-60px;top:-80px;animation:blob 9s ease-in-out infinite}
-.hero .b2{width:200px;height:200px;background:#25D366;right:-50px;bottom:-90px;animation:blob 11s ease-in-out infinite reverse} /* WHATSAPP GREEN COLOUR IS HERE */
+.hero .b2{width:200px;height:200px;background:#25D366;right:-50px;bottom:-90px;animation:blob 11s ease-in-out infinite reverse} /* WHATSAPP GREEN COLOUR */
 .hero > *:not(.blob){position:relative;z-index:1}
 .hero img{height:56px;margin-bottom:14px;animation:floaty 4s ease-in-out infinite}
 .hero .ttl{font-size:clamp(20px,2.9vw,34px);font-weight:800;color:#1f2a7c;line-height:1.25;letter-spacing:.2px;margin:0 auto 10px;max-width:980px}
@@ -1095,6 +1095,7 @@ transition:transform .2s,box-shadow .2s,border-color .2s,color .2s;box-shadow:0 
 /* ---------- isian & dropdown (bullet drop) ---------- */
 div[data-baseweb="input"], div[data-baseweb="textarea"], div[data-baseweb="select"] > div{border-radius:12px !important;background:#fff !important;border:1.5px solid var(--line) !important;
 transition:border-color .18s,box-shadow .18s,transform .18s}
+div[data-baseweb="input"] input { color: #1c2a6b !important; -webkit-text-fill-color: #1c2a6b !important; }
 div[data-baseweb="input"]:hover, div[data-baseweb="textarea"]:hover, div[data-baseweb="select"] > div:hover{border-color:#9db8ff !important}
 div[data-baseweb="input"]:focus-within, div[data-baseweb="textarea"]:focus-within, div[data-baseweb="select"] > div:focus-within{border-color:#2b5fd9 !important;box-shadow:0 0 0 4px rgba(43,95,217,.16)}
 div[data-baseweb="select"] *{color:#1c2a6b}
@@ -1111,10 +1112,13 @@ label[data-baseweb="checkbox"]{padding:4px 8px;border-radius:10px;transition:bac
 label[data-baseweb="checkbox"]:hover{background:#f5f8ff}
 
 /* ---------- tab, expander, tabel ---------- */
-button[data-baseweb="tab"]{font-weight:600;color:#5f6b9a !important;border-radius:12px 12px 0 0;transition:color .18s,background .18s}
+button[data-baseweb="tab"]{font-weight:600 !important; color:#5f6b9a !important; border-radius:12px 12px 0 0; transition:color .18s,background .18s}
+button[data-baseweb="tab"] * { color:#5f6b9a !important; }
 button[data-baseweb="tab"]:hover{color:#1f2a7c !important;background:#f0f4ff}
-button[data-baseweb="tab"][aria-selected="true"]{color:#1f2a7c !important}
-div[data-baseweb="tab-highlight"]{background:linear-gradient(90deg,#1f2a7c,#2b5fd9) !important;height:3px !important;border-radius:3px}
+button[data-baseweb="tab"]:hover * { color:#1f2a7c !important; }
+button[data-baseweb="tab"][aria-selected="true"]{color:#d64545 !important;}
+button[data-baseweb="tab"][aria-selected="true"] * { color:#d64545 !important; }
+div[data-baseweb="tab-highlight"]{background:#d64545 !important;height:3px !important;border-radius:3px}
 [data-testid="stExpander"]{border:1px solid var(--line) !important;border-radius:16px !important;background:#fff;box-shadow:var(--shadow);transition:box-shadow .25s}
 [data-testid="stExpander"]:hover{box-shadow:var(--shadow-hi)}
 [data-testid="stExpander"] summary{font-weight:600}
@@ -1167,11 +1171,19 @@ def days_text(days):
 # 6b. MODE AUTHOR (password di Streamlit Secrets: AUTHOR_PASSWORD)
 # =====================================================================
 def _author_secret():
+    # =========================================================================
+    # CARA MENGATUR PASSWORD DI STREAMLIT CLOUD SECRETS:
+    # 1. Buka dashboard Streamlit Cloud Anda.
+    # 2. Klik ikon titik tiga pada app -> Settings -> Secrets.
+    # 3. Tambahkan baris berikut (ganti dengan password rahasia Anda):
+    #    AUTHOR_PASSWORD = "password_rahasia_anda"
+    # 4. Klik Save. Password default di bawah ini ("admin123") hanya digunakan jika Secrets belum diset.
+    # =========================================================================
     try:
         v = st.secrets.get("AUTHOR_PASSWORD")
     except Exception:
         v = None
-    return str(v) if v else os.environ.get("AUTHOR_PASSWORD", "")
+    return str(v) if v else os.environ.get("AUTHOR_PASSWORD", "admin123")
 
 
 def is_author():
@@ -1179,7 +1191,7 @@ def is_author():
 
 
 def author_box():
-    """Kotak login author di sidebar. Tanpa AUTHOR_PASSWORD di Secrets, tidak ada yang bisa masuk."""
+    """Kotak login author di sidebar."""
     with st.sidebar.expander("🔐 Author"):
         if is_author():
             st.success("Mode author aktif")
@@ -1605,7 +1617,6 @@ def _preview(sh, base_px=1400, scale=0.85): # Diperbesar dari 0.6 menjadi 0.85
 
 def page_download():
     header()
-    st.caption("Download formulir resmi (PDF A4 landscape) dan data (CSV)")
     names = ["🌡️ Form Suhu & Kelembaban", "🛠️ Form Checklist QC Peralatan"]
     if is_author():   # generator QR hanya untuk author
         names.append("🔳 QR Code Ruangan")
@@ -1730,6 +1741,6 @@ with st.sidebar:
                     except Exception as ex:
                         st.error("Gagal restore: {}".format(ex))
     author_box()
-    st.caption("{} · RAD 2209.xx/00".format(FORM_CODE_TH))
+    # st.caption("{} · RAD 2209.xx/00".format(FORM_CODE_TH))  <-- DIHAPUS SESUAI PERMINTAAN
 
 pg.run()
