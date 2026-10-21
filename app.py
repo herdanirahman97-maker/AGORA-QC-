@@ -1114,36 +1114,65 @@ li[role="option"] { background-color: #ffffff !important; color: #1c2a6b !import
 li[role="option"]:hover, li[role="option"][aria-selected="true"] { background-color: #eef3ff !important; color: #1f2a7c !important; padding-left:18px; }
 li[role="option"][aria-selected="true"]{font-weight:700;}
 
-/* ---------- FIX TABS (DARK BLUE TEXT FOR ACTIVE TAB) ---------- */
-/* 1. Paksa SEMUA teks dan elemen di dalam tab tidak aktif menjadi warna default */
-[data-testid="stTabs"] button[data-baseweb="tab"] * {
-    color: #5f6b9a !important; 
+/* ---------- FIX TABS (SIDEBAR STYLE, NO RED) ---------- */
+/* 1. Hilangkan garis merah secara total dan paksa transparan */
+[data-baseweb="tab-highlight"], 
+[data-baseweb="tab-border"],
+[data-testid="stTabs"] [data-baseweb="tab-highlight"],
+[data-testid="stTabs"] [data-baseweb="tab-border"] {
+    display: none !important;
+    opacity: 0 !important;
+    height: 0px !important;
+    background: transparent !important;
+    border: none !important;
+}
+
+/* 2. Atur kontainer tab */
+[data-testid="stTabs"] [data-baseweb="tab-list"],
+div[data-baseweb="tab-list"] {
+    gap: 12px !important;
+    border-bottom: none !important;
+}
+
+/* 3. Gaya dasar untuk tab (tidak aktif) */
+[data-testid="stTabs"] button[data-baseweb="tab"],
+button[data-baseweb="tab"] {
+    background-color: transparent !important;
+    border-radius: 12px !important;
+    padding: 8px 16px !important;
+    border: none !important;
+    transition: all 0.2s ease !important;
+}
+
+/* 4. Gaya untuk Tab yang Sedang Aktif (Sama persis seperti Sidebar) */
+[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"],
+button[data-baseweb="tab"][aria-selected="true"] {
+    background: linear-gradient(90deg, #e6edff, #f5f8ff) !important; /* Latar belakang biru muda */
+    box-shadow: inset 4px 0 0 #1f2a7c !important; /* Garis kiri biru tua */
+}
+
+/* 5. Warna teks untuk SEMUA tab (Biru Tua) */
+[data-testid="stTabs"] button[data-baseweb="tab"] *,
+[data-testid="stTabs"] button[data-baseweb="tab"] p,
+[data-testid="stTabs"] button[data-baseweb="tab"] span,
+button[data-baseweb="tab"] *,
+button[data-baseweb="tab"] p,
+button[data-baseweb="tab"] span {
+    color: #1f2a7c !important;
+    -webkit-text-fill-color: #1f2a7c !important;
     font-weight: 500 !important;
 }
 
-/* 2. Paksa SEMUA teks dan elemen di dalam tab yang AKTIF menjadi Dark Blue */
-[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] * {
-    color: #1f2a7c !important; /* Warna Dark Blue */
+/* 6. Teks Tab Aktif dibuat lebih tebal */
+[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] *,
+button[data-baseweb="tab"][aria-selected="true"] * {
     font-weight: 700 !important;
 }
 
-/* 3. Ubah garis bawah (underline) menjadi Dark Blue pada tab aktif */
-[data-testid="stTabs"] div[data-baseweb="tab-highlight"] {
-    background-color: #1f2a7c !important; /* Warna Dark Blue */
-    height: 3px !important;
-    border-radius: 3px 3px 0 0 !important;
-    display: block !important;
-    opacity: 1 !important;
-}
-
-/* 4. Hapus garis bawah bawaan abu-abu */
-[data-testid="stTabs"] div[data-baseweb="tab-border"] {
-    display: none !important;
-}
-
-/* 5. Efek hover untuk semua elemen di dalam tab */
-[data-testid="stTabs"] button[data-baseweb="tab"]:hover * {
-    color: #2b5fd9 !important;
+/* 7. Efek Hover */
+[data-testid="stTabs"] button[data-baseweb="tab"]:hover,
+button[data-baseweb="tab"]:hover {
+    background-color: #eef3ff !important; 
 }
 
 /* PERBAIKAN WARNA EXPANDER (Author box agar terlihat) */
@@ -1670,6 +1699,7 @@ def page_download():
                  "Suhu (°C)": e["suhu"], "Kelembaban (%)": e["hum"], "Staff": e["petugas"], "Temuan": e["ket"]}
                 for (d, s), e in sorted(month_data(ruang, y, m).items())]
         c3.download_button("⬇️ Data (CSV)", pd.DataFrame(rows).to_csv(index=False).encode("utf-8-sig"), fname + ".csv", "text/csv", key="dl_csv")
+        # st.caption("Format mengikuti {}: grafik titik suhu (16-27 °C) dan kelembaban (10-100 %), pita merah muda = batas normal, titik merah = di luar batas.".format(FORM_CODE_TH)) <-- DIHAPUS
     with t2:
         alat, m2, y2 = filter_bar("dq", [d["nama"] for d in devices()], "Peralatan")
         dev = dev_by_name(alat)
@@ -1696,6 +1726,8 @@ def page_download():
     if is_author():
         with tabs[2]:
             download_qr_tab()
+
+
 
 
 def download_qr_tab():
@@ -1769,5 +1801,6 @@ with st.sidebar:
                     except Exception as ex:
                         st.error("Gagal restore: {}".format(ex))
     author_box()
+    # st.caption("{} · RAD 2209.xx/00".format(FORM_CODE_TH))  <-- DIHAPUS SESUAI PERMINTAAN
 
 pg.run()
