@@ -1118,11 +1118,12 @@ li[role="option"] { background-color: #ffffff !important; color: #1c2a6b !import
 li[role="option"]:hover, li[role="option"][aria-selected="true"] { background-color: #eef3ff !important; color: #1f2a7c !important; padding-left:18px; }
 li[role="option"][aria-selected="true"]{font-weight:700;}
 
-/* ---------- NUCLEAR FIX TABS ---------- */
-/* Paksa semua warna primary di level terdalam */
-:root, html, body, .stApp, [data-testid="stAppViewContainer"] {
+/* ---------- EXTREME TAB OVERRIDE ---------- */
+/* Paksa semua variabel warna ke biru */
+:root, html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stTabs"] {
     --primary-color: #1f2a7c !important;
     --primary: #1f2a7c !important;
+    --theme-primary: #1f2a7c !important;
 }
 
 /* Hancurkan garis merah di bawah tab */
@@ -1131,15 +1132,18 @@ li[role="option"][aria-selected="true"]{font-weight:700;}
 .stTabs [data-baseweb="tab-highlight"],
 .stTabs [data-baseweb="tab-border"],
 [data-testid="stTabs"] [data-baseweb="tab-highlight"],
-[data-testid="stTabs"] [data-baseweb="tab-border"] {
+[data-testid="stTabs"] [data-baseweb="tab-border"],
+div[role="tablist"] > div[data-baseweb="tab-highlight"],
+div[role="tablist"] > div[data-baseweb="tab-border"] {
     display: none !important;
     background: transparent !important;
     height: 0 !important;
     opacity: 0 !important;
+    border: none !important;
 }
 
-/* Base style untuk SEMUA tab */
-button[data-baseweb="tab"] {
+/* Style dasar SEMUA tab */
+[data-testid="stTabs"] button[data-baseweb="tab"] {
     background-color: #f5f8ff !important; 
     border: 1.5px solid #c9d6f5 !important;
     border-radius: 12px !important;
@@ -1147,26 +1151,34 @@ button[data-baseweb="tab"] {
     margin-right: 10px !important;
     transition: all 0.2s ease !important;
     outline: none !important;
+    box-shadow: none !important;
 }
 
-/* Nuke semua text color (termasuk inline styles) */
-button[data-baseweb="tab"] *, 
-button[data-baseweb="tab"] p,
-button[data-baseweb="tab"] div,
-button[data-baseweb="tab"] span,
-[data-testid="stTabs"] button[data-baseweb="tab"] * {
+/* Paksa teks menjadi biru */
+[data-testid="stTabs"] button[data-baseweb="tab"] *, 
+[data-testid="stTabs"] button[data-baseweb="tab"] p,
+[data-testid="stTabs"] button[data-baseweb="tab"] div,
+[data-testid="stTabs"] button[data-baseweb="tab"] span {
     color: #1f2a7c !important;
     -webkit-text-fill-color: #1f2a7c !important;
     font-weight: 700 !important;
     fill: #1f2a7c !important;
 }
 
-/* Style untuk tab yang aktif (warna background lebih gelap, border tegas) */
-button[data-baseweb="tab"][aria-selected="true"],
+/* Tab aktif (sidebar style) */
 [data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
-    background: linear-gradient(90deg, #e6edff, #c9d6f5) !important; 
-    border: 1.5px solid #1f2a7c !important;
-    box-shadow: inset 4px 0 0 #1f2a7c !important; 
+    background: linear-gradient(90deg, #e6edff, #f5f8ff) !important; 
+    box-shadow: inset 4px 0 0 #1f2a7c !important;
+    border: 1.5px solid #c9d6f5 !important;
+}
+
+/* Hilangkan focus ring / outline merah saat diklik */
+[data-testid="stTabs"] button[data-baseweb="tab"]:focus,
+[data-testid="stTabs"] button[data-baseweb="tab"]:active,
+[data-testid="stTabs"] button[data-baseweb="tab"]:focus-visible {
+    outline: none !important;
+    box-shadow: inset 4px 0 0 #1f2a7c !important;
+    border-color: #c9d6f5 !important;
 }
 
 /* PERBAIKAN WARNA EXPANDER */
