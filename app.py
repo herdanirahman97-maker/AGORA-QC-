@@ -1114,12 +1114,12 @@ li[role="option"] { background-color: #ffffff !important; color: #1c2a6b !import
 li[role="option"]:hover, li[role="option"][aria-selected="true"] { background-color: #eef3ff !important; color: #1f2a7c !important; padding-left:18px; }
 li[role="option"][aria-selected="true"]{font-weight:700;}
 
-/* ---------- FIX TABS (SIDEBAR STYLE, NO RED) ---------- */
-/* 1. Hilangkan garis merah secara total dan paksa transparan */
-[data-baseweb="tab-highlight"], 
-[data-baseweb="tab-border"],
-[data-testid="stTabs"] [data-baseweb="tab-highlight"],
-[data-testid="stTabs"] [data-baseweb="tab-border"] {
+/* ---------- FIX TABS (BLUE BOX & WHITE TEXT, NO RED) ---------- */
+/* 1. Hilangkan garis bawah merah secara total */
+div[data-baseweb="tab-highlight"], 
+div[data-baseweb="tab-border"],
+[data-testid="stTabs"] div[data-baseweb="tab-highlight"],
+[data-testid="stTabs"] div[data-baseweb="tab-border"] {
     display: none !important;
     opacity: 0 !important;
     height: 0px !important;
@@ -1134,45 +1134,42 @@ div[data-baseweb="tab-list"] {
     border-bottom: none !important;
 }
 
-/* 3. Gaya dasar untuk tab (tidak aktif) */
-[data-testid="stTabs"] button[data-baseweb="tab"],
+/* 3. Beri background biru pada tab */
+[data-testid="stTabs"] button[role="tab"],
 button[data-baseweb="tab"] {
-    background-color: transparent !important;
-    border-radius: 12px !important;
-    padding: 8px 16px !important;
+    background-color: #1f2a7c !important; /* Warna biru */
+    border-radius: 999px !important;     /* Bentuk kapsul */
+    padding: 8px 24px !important;
     border: none !important;
+    opacity: 1 !important;
     transition: all 0.2s ease !important;
 }
 
-/* 4. Gaya untuk Tab yang Sedang Aktif (Sama persis seperti Sidebar) */
-[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"],
-button[data-baseweb="tab"][aria-selected="true"] {
-    background: linear-gradient(90deg, #e6edff, #f5f8ff) !important; /* Latar belakang biru muda */
-    box-shadow: inset 4px 0 0 #1f2a7c !important; /* Garis kiri biru tua */
-}
-
-/* 5. Warna teks untuk SEMUA tab (Biru Tua) */
-[data-testid="stTabs"] button[data-baseweb="tab"] *,
-[data-testid="stTabs"] button[data-baseweb="tab"] p,
-[data-testid="stTabs"] button[data-baseweb="tab"] span,
+/* 4. Paksa semua teks di dalam tab menjadi putih */
+[data-testid="stTabs"] button[role="tab"] *,
+[data-testid="stTabs"] button[role="tab"] p,
+[data-testid="stTabs"] button[role="tab"] div,
+[data-testid="stTabs"] button[role="tab"] span,
 button[data-baseweb="tab"] *,
 button[data-baseweb="tab"] p,
+button[data-baseweb="tab"] div,
 button[data-baseweb="tab"] span {
-    color: #1f2a7c !important;
-    -webkit-text-fill-color: #1f2a7c !important;
-    font-weight: 500 !important;
+    color: #ffffff !important; /* Teks putih */
+    -webkit-text-fill-color: #ffffff !important;
+    font-weight: 600 !important;
 }
 
-/* 6. Teks Tab Aktif dibuat lebih tebal */
-[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] *,
-button[data-baseweb="tab"][aria-selected="true"] * {
-    font-weight: 700 !important;
+/* 5. State Tab yang Sedang Aktif (Biru lebih gelap) */
+[data-testid="stTabs"] button[role="tab"][aria-selected="true"],
+button[data-baseweb="tab"][aria-selected="true"] {
+    background-color: #004e75 !important; 
+    box-shadow: 0 4px 12px rgba(0,78,117,0.4) !important;
 }
 
-/* 7. Efek Hover */
-[data-testid="stTabs"] button[data-baseweb="tab"]:hover,
+/* 6. Efek Hover */
+[data-testid="stTabs"] button[role="tab"]:hover,
 button[data-baseweb="tab"]:hover {
-    background-color: #eef3ff !important; 
+    background-color: #2b5fd9 !important; 
 }
 
 /* PERBAIKAN WARNA EXPANDER (Author box agar terlihat) */
@@ -1722,4 +1719,85 @@ def page_download():
                           "Kegiatan selesai": len([i for i in dev["items"] if i in e["done"]]), "Total kegiatan": len(dev["items"]),
                           "Belum dikerjakan": "; ".join(i for i in dev["items"] if i not in e["done"] and is_daily(i)), "Catatan": e["catatan"]})
         q3.download_button("⬇️ Data (CSV)", pd.DataFrame(rows2).to_csv(index=False).encode("utf-8-sig"), fname2 + ".csv", "text/csv", key="dq_csv")
-        st.caption("Format mengikuti {} - centang = kegiatan seles
+        st.caption("Format mengikuti {} - centang = kegiatan selesai. Kegiatan suhu & kelembaban terisi otomatis dari data ruang terkait.".format(dev["kode"]))
+    if is_author():
+        with tabs[2]:
+            download_qr_tab()
+
+
+
+
+def download_qr_tab():
+    if not is_author():
+        return
+    st.markdown("**QR Code per ruangan** - scan membuka halaman pengisian Suhu & Kelembaban + Checklist QC untuk ruangan tersebut ({} ruangan).".format(len(room_names())))
+    base = st.text_input("Alamat aplikasi (URL Streamlit)", value=default_base_url(), key="qr_base").strip()
+    if "NAMA-APP" in base or not base.startswith("http"):
+        st.warning("Ganti dengan alamat asli aplikasi Anda, mis. https://shag-radiologi.streamlit.app, lalu cetak QR. Jangan cetak sebelum alamatnya benar.")
+    if st.button("Simpan alamat ini", key="qr_base_save"):
+        cfg = load_cfg()
+        cfg["base_url"] = base.rstrip("/")
+        save_cfg(cfg)
+        st.success("Alamat disimpan.")
+    sheets = build_qr_sheets(base)
+    _preview(sheets[0], 900)
+    st.download_button("⬇️ PDF stiker QR (semua ruangan, A4)", sheets_to_pdf(sheets, "QR Code Ruangan - Siloam Hospitals Agora", portrait=True),
+                       "QR_Ruangan_SHAG.pdf", "application/pdf", key="qr_pdf")
+    st.dataframe(pd.DataFrame([{"Ruangan": r, "Checklist QC": ", ".join(d["nama"] for d in room_devices(r)) or "-", "Link": room_url(base, r)} for r in room_names()]),
+                 hide_index=True)
+    st.caption("Cetak, laminating, tempel di dekat termometer/higrometer. Link bisa diuji dengan membuka salah satu alamat di tabel. "
+               "Untuk MRI, tempel QR di luar Zona IV (pintu/ruang kontrol) - HP tidak boleh masuk ruang magnet.")
+
+
+# =====================================================================
+# 8. NAVIGASI & SIDEBAR
+# =====================================================================
+_pages = [(page_dashboard, "Dashboard", "📊", "dashboard", True),
+          (page_ruang, "Isi Ruangan (QR)", "🔳", "ruang", False)]
+if is_author():   # backdate manual (tanggal sebelum hari ini) hanya untuk author
+    _pages.append((page_backdate, "Input Backdate (manual)", "🕘", "backdate", False))
+_pages.append((page_download, "Download & QR" if is_author() else "Download Formulir", "⬇️", "download", False))
+pg = st.navigation([st.Page(f, title="{}. {}".format(i + 1, t), icon=ic, url_path=u, default=d) for i, (f, t, ic, u, d) in enumerate(_pages)])
+
+with st.sidebar:
+    if is_author():
+        with st.expander("Pengaturan ruang & staff"):
+            cfg = load_cfg()
+            nm = st.text_input("Nama ruang baru / ruang yang diubah", key="cfg_nm")
+            c1, c2 = st.columns(2)
+            tl = c1.number_input("Suhu min (°C)", value=20.0, step=0.5, key="cfg_tl")
+            th = c2.number_input("Suhu maks (°C)", value=24.0, step=0.5, key="cfg_th")
+            hl = c1.number_input("Kelembaban min (%)", value=30.0, step=1.0, key="cfg_hl")
+            hh = c2.number_input("Kelembaban maks (%)", value=70.0, step=1.0, key="cfg_hh")
+            if st.button("Simpan ruang", key="cfg_add"):
+                if nm.strip():
+                    cfg["rooms"] = [r for r in cfg["rooms"] if r["nama"] != nm.strip()] + [dict(nama=nm.strip(), t_lo=tl, t_hi=th, h_lo=hl, h_hi=hh, tekanan=False)]
+                    save_cfg(cfg)
+                    st.success("Ruang disimpan.")
+            stf = st.text_input("Inisial staff (pisahkan koma)", value=",".join(cfg["staff"]), key="cfg_staff")
+            if st.button("Simpan staff", key="cfg_staff_btn"):
+                cfg["staff"] = [x.strip().upper() for x in stf.split(",") if x.strip()] or cfg["staff"]
+                save_cfg(cfg)
+                st.success("Staff disimpan.")
+        with st.expander("Backup & restore data"):
+            st.caption("Penyimpanan CSV di Streamlit Cloud bisa hilang saat aplikasi restart/redeploy. Backup rutin (mis. akhir bulan), lalu restore bila perlu.")
+            for label, path, cols, k in (("Suhu & kelembaban", ENTRY_FILE, ECOLS, "th"), ("QC peralatan", QC_FILE, QCOLS, "qc")):
+                st.download_button("⬇️ Backup {} (CSV)".format(label), _read(path, cols).to_csv(index=False).encode("utf-8-sig"),
+                                   os.path.basename(path), "text/csv", key="bk_" + k)
+                up = st.file_uploader("Restore {}".format(label), type="csv", key="up_" + k)
+                if up is not None and st.button("Restore {} (menimpa data saat ini)".format(label), key="rs_" + k):
+                    try:
+                        new = pd.read_csv(up, dtype=str, encoding="utf-8-sig").fillna("")
+                        miss = [c for c in cols if c not in new.columns]
+                        if miss:
+                            st.error("Kolom tidak lengkap: " + ", ".join(miss))
+                        else:
+                            os.makedirs(DATA_DIR, exist_ok=True)
+                            new[cols].to_csv(path, index=False)
+                            st.success("Data {} dipulihkan ({} baris).".format(label, len(new)))
+                    except Exception as ex:
+                        st.error("Gagal restore: {}".format(ex))
+    author_box()
+    # st.caption("{} · RAD 2209.xx/00".format(FORM_CODE_TH))  <-- DIHAPUS SESUAI PERMINTAAN
+
+pg.run()
