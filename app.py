@@ -1115,21 +1115,19 @@ li[role="option"]:hover, li[role="option"][aria-selected="true"] { background-co
 li[role="option"][aria-selected="true"]{font-weight:700;}
 
 /* ---------- FIX TABS (DARK BLUE TEXT FOR ACTIVE TAB) ---------- */
-/* 1. Warna teks default untuk semua tab */
-[data-testid="stTabs"] button[data-baseweb="tab"] p {
+/* 1. Paksa SEMUA teks dan elemen di dalam tab tidak aktif menjadi warna default */
+[data-testid="stTabs"] button[data-baseweb="tab"] * {
     color: #5f6b9a !important; 
     font-weight: 500 !important;
-    font-size: 14px !important;
 }
 
-/* 2. Warna teks untuk tab yang AKTIF (Dark Blue) */
-[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] p,
-[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] span {
+/* 2. Paksa SEMUA teks dan elemen di dalam tab yang AKTIF menjadi Dark Blue */
+[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] * {
     color: #1f2a7c !important; /* Warna Dark Blue */
     font-weight: 700 !important;
 }
 
-/* 3. Ubah garis bawah (underline) merah menjadi Dark Blue pada tab aktif */
+/* 3. Ubah garis bawah (underline) menjadi Dark Blue pada tab aktif */
 [data-testid="stTabs"] div[data-baseweb="tab-highlight"] {
     background-color: #1f2a7c !important; /* Warna Dark Blue */
     height: 3px !important;
@@ -1138,13 +1136,13 @@ li[role="option"][aria-selected="true"]{font-weight:700;}
     opacity: 1 !important;
 }
 
-/* Hapus garis bawah bawaan abu-abu jika ada */
+/* 4. Hapus garis bawah bawaan abu-abu */
 [data-testid="stTabs"] div[data-baseweb="tab-border"] {
     display: none !important;
 }
 
-/* 4. Efek hover pada tab */
-[data-testid="stTabs"] button[data-baseweb="tab"]:hover p {
+/* 5. Efek hover untuk semua elemen di dalam tab */
+[data-testid="stTabs"] button[data-baseweb="tab"]:hover * {
     color: #2b5fd9 !important;
 }
 
