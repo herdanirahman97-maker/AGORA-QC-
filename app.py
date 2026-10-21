@@ -1111,14 +1111,35 @@ div[role="radiogroup"] > label:has(input:checked) *{color:#fff !important}
 label[data-baseweb="checkbox"]{padding:4px 8px;border-radius:10px;transition:background .15s}
 label[data-baseweb="checkbox"]:hover{background:#f5f8ff}
 
-/* ---------- tab, expander, tabel ---------- */
-button[data-baseweb="tab"]{font-weight:600 !important; color:#5f6b9a !important; border-radius:12px 12px 0 0; transition:color .18s,background .18s}
-button[data-baseweb="tab"] * { color:#5f6b9a !important; }
-button[data-baseweb="tab"]:hover{color:#1f2a7c !important;background:#f0f4ff}
-button[data-baseweb="tab"]:hover * { color:#1f2a7c !important; }
-button[data-baseweb="tab"][aria-selected="true"]{color:#d64545 !important;}
-button[data-baseweb="tab"][aria-selected="true"] * { color:#d64545 !important; }
-div[data-baseweb="tab-highlight"]{background:#d64545 !important;height:3px !important;border-radius:3px}
+/* ---------- tab (blue label style) ---------- */
+div[data-baseweb="tab-list"] {
+    gap: 12px !important;
+    background: transparent !important;
+    padding-bottom: 10px;
+}
+button[data-baseweb="tab"] {
+    background-color: #1f2a7c !important; /* Blue background */
+    border-radius: 999px !important; /* Pill label */
+    padding: 8px 24px !important;
+    border: none !important;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 6px rgba(31,42,124,0.2);
+}
+button[data-baseweb="tab"] *, button[data-baseweb="tab"] p {
+    color: #ffffff !important; /* White text */
+    font-weight: 600 !important;
+}
+button[data-baseweb="tab"]:hover {
+    background-color: #2b5fd9 !important;
+    transform: translateY(-1px);
+}
+button[data-baseweb="tab"][aria-selected="true"] {
+    background-color: #004e75 !important; /* Distinct active state (darker blue) */
+    box-shadow: 0 4px 12px rgba(0,78,117,0.4);
+}
+div[data-baseweb="tab-highlight"], div[data-baseweb="tab-border"] {
+    display: none !important;
+}
 
 /* PERBAIKAN WARNA EXPANDER (Author box agar terlihat) */
 [data-testid="stExpander"]{border:1px solid var(--line) !important;border-radius:16px !important;background:#fff;box-shadow:var(--shadow);transition:box-shadow .25s}
