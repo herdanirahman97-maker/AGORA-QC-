@@ -993,8 +993,11 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&display=swap');
 
-:root{--navy:#1f2a7c;--blue:#2b5fd9;--ink:#1c2a6b;--muted:#5f6b9a;--line:#e3e9f6;--soft:#f5f8ff;--ok:#2e9e5b;--bad:#d64545;--warn:#f0a81c;
---shadow:0 6px 22px rgba(31,42,124,.10);--shadow-hi:0 14px 34px rgba(31,42,124,.20)}
+:root{
+    --navy:#1f2a7c;--blue:#2b5fd9;--ink:#1c2a6b;--muted:#5f6b9a;--line:#e3e9f6;--soft:#f5f8ff;--ok:#2e9e5b;--bad:#d64545;--warn:#f0a81c;
+    --shadow:0 6px 22px rgba(31,42,124,.10);--shadow-hi:0 14px 34px rgba(31,42,124,.20);
+    --primary-color: #1f2a7c !important; /* Paksa Streamlit primary color ke biru */
+}
 :root, html, body { color-scheme: light !important; }
 html{scroll-behavior:smooth}
 html, body, [class*="css"], .stApp, .stMarkdown, .stButton, .stTextInput,
@@ -1114,52 +1117,38 @@ li[role="option"] { background-color: #ffffff !important; color: #1c2a6b !import
 li[role="option"]:hover, li[role="option"][aria-selected="true"] { background-color: #eef3ff !important; color: #1f2a7c !important; padding-left:18px; }
 li[role="option"][aria-selected="true"]{font-weight:700;}
 
-/* ---------- FIX TABS (ALWAYS ACTIVE STYLE, BLUE TEXT, NO RED) ---------- */
-/* 1. Hilangkan garis merah secara total */
-div[data-baseweb="tab-highlight"], 
-div[data-baseweb="tab-border"],
-[data-testid="stTabs"] div[data-baseweb="tab-highlight"],
-[data-testid="stTabs"] div[data-baseweb="tab-border"],
+/* ---------- FIX TABS (ALWAYS ACTIVE, BLUE TEXT, NO RED) ---------- */
+/* 1. Paksa Streamlit primary color menjadi biru (kill red) */
+:root {
+    --primary-color: #1f2a7c !important;
+}
+
+/* 2. Hilangkan garis merah secara total */
+[data-baseweb="tab-highlight"],
+[data-baseweb="tab-border"],
 .stTabs [data-baseweb="tab-highlight"],
-.stTabs [data-baseweb="tab-border"] {
+.stTabs [data-baseweb="tab-border"],
+div[role="tablist"] > div[data-baseweb="tab-highlight"],
+div[role="tablist"] > div[data-baseweb="tab-border"] {
     display: none !important;
-    visibility: hidden !important;
-    height: 0px !important;
     background-color: transparent !important;
-    border: none !important;
+    height: 0 !important;
+    opacity: 0 !important;
 }
 
-/* 2. Atur kontainer tab */
-[data-testid="stTabs"] [data-baseweb="tab-list"],
-div[data-baseweb="tab-list"] {
-    gap: 12px !important;
-    border-bottom: none !important;
-}
-
-/* 3. Gaya dasar untuk SEMUA tab (membuat bentuk kotak label seperti di sidebar) */
-[data-testid="stTabs"] button[data-baseweb="tab"],
+/* 3. Base style for ALL tabs (making them look like sidebar buttons) */
 button[data-baseweb="tab"] {
-    background-color: #ffffff !important;
-    border: 1.5px solid var(--line) !important;
+    background-color: #f5f8ff !important; /* Light blue background */
+    border: 1.5px solid #e3e9f6 !important;
     border-radius: 12px !important;
     padding: 8px 20px !important;
+    margin-right: 10px !important;
     transition: all 0.2s ease !important;
+    outline: none !important;
 }
 
-/* 4. Gaya untuk Tab yang Sedang Aktif (Sama persis seperti Sidebar) */
-[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"],
-button[data-baseweb="tab"][aria-selected="true"] {
-    background: linear-gradient(90deg, #e6edff, #f5f8ff) !important; /* Latar belakang biru muda */
-    box-shadow: inset 4px 0 0 #1f2a7c !important; /* Garis kiri biru tua */
-    border-color: #c9d6f5 !important;
-}
-
-/* 5. Paksa warna teks menjadi biru untuk SEMUA tab (aktif & tidak aktif) */
-[data-testid="stTabs"] button[data-baseweb="tab"] *,
-[data-testid="stTabs"] button[data-baseweb="tab"] p,
-[data-testid="stTabs"] button[data-baseweb="tab"] div,
-[data-testid="stTabs"] button[data-baseweb="tab"] span,
-button[data-baseweb="tab"] *,
+/* 4. Force text color to dark blue for all nested elements */
+button[data-baseweb="tab"] *, 
 button[data-baseweb="tab"] p,
 button[data-baseweb="tab"] div,
 button[data-baseweb="tab"] span {
@@ -1169,10 +1158,17 @@ button[data-baseweb="tab"] span {
     fill: #1f2a7c !important;
 }
 
-/* 6. Efek Hover */
-[data-testid="stTabs"] button[data-baseweb="tab"]:hover,
+/* 5. Active tab styling (same as sidebar active) */
+button[data-baseweb="tab"][aria-selected="true"] {
+    background: linear-gradient(90deg, #e6edff, #f5f8ff) !important;
+    border: 1.5px solid #c9d6f5 !important;
+    box-shadow: inset 4px 0 0 #1f2a7c !important; /* Left blue border */
+}
+
+/* 6. Hover effect */
 button[data-baseweb="tab"]:hover {
-    background-color: #eef3ff !important; 
+    background-color: #eef3ff !important;
+    border-color: #c9d6f5 !important;
 }
 
 /* PERBAIKAN WARNA EXPANDER (Author box agar terlihat) */
