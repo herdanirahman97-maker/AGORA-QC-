@@ -1362,21 +1362,28 @@ def page_ruang():
     qp = st.query_params.get("ruang", "")
     if isinstance(qp, list):
         qp = qp[0] if qp else ""
+    ss = st.session_state
     if qp in names:
-        ruang = qp
+        ss["locked_room"] = qp    # scan QR -> ruangan terkunci selama sesi (tetap terkunci walau pindah menu lalu kembali)
+    locked = ss.get("locked_room")
+    if is_author():               # hanya author yang boleh memilih ruangan secara manual
+        ruang = st.selectbox("Ruangan (mode author)", names, index=names.index(locked) if locked in names else 0, key="qr_pilih")
+    elif qp and qp not in names:
+        st.error("QR code tidak dikenali (ruangan '{}'). Scan ulang QR code di ruangan.".format(qp))
+        return
+    elif locked in names:
+        ruang = locked
     else:
-        if qp:
-            st.warning("Ruangan '{}' tidak dikenali. Pilih ruangan di bawah.".format(qp))
-        else:
-            st.info("Buka halaman ini dengan scan QR code di ruangan, atau pilih ruangan secara manual.")
-        ruang = st.selectbox("Ruangan *", names, key="qr_pilih")
+        st.info("Scan QR code yang ada di ruangan untuk membuka formulir pengisian ruangan tersebut.")
+        return
     n = now()
     tgl = n.date()
     data = month_data(ruang, tgl.year, tgl.month)
     badges = " &nbsp; ".join("{} {} ({:02d}.00)".format("✅" if (tgl.day, s) in data else "⬜", SHIFT_NAME[s], SHIFT_HOUR[s]) for s in "PSM")
     st.markdown("<div class='box'><span style='font-size:12px;color:#667'>Ruangan</span><br><span style='font-size:26px;font-weight:700;color:#0b5cab'>{}</span><br>"
-                "<span style='font-size:12px;color:#556'>{}, {} {} {} &middot; {} WIB</span><br><span style='font-size:12px'>Sudah diisi hari ini: {}</span></div>".format(
-                    escape(ruang), HARI[tgl.weekday()], tgl.day, BLN[tgl.month - 1], tgl.year, n.strftime("%H:%M"), badges), unsafe_allow_html=True)
+                "<span style='font-size:12px;color:#556'>{}, {} {} {} &middot; {} WIB</span><br><span style='font-size:12px'>Sudah diisi hari ini: {}</span>{}</div>".format(
+                    escape(ruang), HARI[tgl.weekday()], tgl.day, BLN[tgl.month - 1], tgl.year, n.strftime("%H:%M"), badges,
+                    "" if is_author() else "<br><span style='font-size:11px;color:#667'>&#128274; Terkunci ke ruangan ini. Untuk ruangan lain, scan QR code ruangan tersebut.</span>"), unsafe_allow_html=True)
     petugas = st.selectbox("Nama staff (inisial) *", load_cfg()["staff"], key="qr_petugas")
     st.markdown("### 1. Suhu & Kelembaban")
     sk = shift_now()
