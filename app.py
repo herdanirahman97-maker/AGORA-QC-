@@ -920,7 +920,10 @@ def sheets_to_pdf(sheets, title="Formulir Radiologi - Siloam Hospitals Agora", p
     fn_bold = "Lexend-Bold" if bold_ok else "Helvetica-Bold"
     buf = io.BytesIO()
     pw, ph = A4 if portrait else landscape(A4)
-    MG = 22.0
+    
+    # --- UKURAN MARGIN DIPERKECIL DARI 22.0 MENJADI 10.0 AGAR PDF LEBIH BESAR & JELAS ---
+    MG = 10.0
+    
     c = Canvas(buf, pagesize=(pw, ph))
     c.setTitle(title)
     c.setAuthor("Siloam Hospitals Agora - Instalasi Radiologi")
@@ -1028,7 +1031,7 @@ html, body, [class*="css"], .stApp, .stMarkdown, .stButton, .stTextInput,
 .hero::before{content:'';position:absolute;left:0;right:0;top:0;height:5px;background:linear-gradient(90deg,#1f2a7c,#2b5fd9,#27b5c9,#ffb81c,#2b5fd9,#1f2a7c);background-size:300% 100%;animation:shimmer 6s linear infinite}
 .hero .blob{position:absolute;border-radius:50%;filter:blur(38px);opacity:.35;pointer-events:none}
 .hero .b1{width:220px;height:220px;background:#9db8ff;left:-60px;top:-80px;animation:blob 9s ease-in-out infinite}
-.hero .b2{width:200px;height:200px;background:#ffe08a;right:-50px;bottom:-90px;animation:blob 11s ease-in-out infinite reverse}
+.hero .b2{width:200px;height:200px;background:#25D366;right:-50px;bottom:-90px;animation:blob 11s ease-in-out infinite reverse} /* WHATSAPP GREEN COLOUR IS HERE */
 .hero > *:not(.blob){position:relative;z-index:1}
 .hero img{height:56px;margin-bottom:14px;animation:floaty 4s ease-in-out infinite}
 .hero .ttl{font-size:clamp(20px,2.9vw,34px);font-weight:800;color:#1f2a7c;line-height:1.25;letter-spacing:.2px;margin:0 auto 10px;max-width:980px}
@@ -1593,8 +1596,8 @@ def page_backdate():
         backdate_qc()
 
 
-def _preview(sh, base_px=1400, scale=0.6):
-    """Preview formulir dengan ukuran tetap (60%)."""
+def _preview(sh, base_px=1400, scale=0.85): # Diperbesar dari 0.6 menjadi 0.85
+    """Preview formulir dengan ukuran tetap (85%)."""
     wpx = int(base_px * scale)
     components.html("<div style='overflow:auto;background:#fff;border:1px solid #d5dbe3'>{}</div>".format(sheet_to_svg(sh, wpx)),
                     height=int(wpx * sh.height / sh.width) + 30, scrolling=True)
