@@ -1115,55 +1115,40 @@ li[role="option"]:hover, li[role="option"][aria-selected="true"] { background-co
 li[role="option"][aria-selected="true"]{font-weight:700;}
 
 /* ---------- FIX TABS (BLUE LABEL WITH WHITE TEXT) ---------- */
-/* Hide the default red underline/border completely */
-[data-testid="stTabs"] [data-baseweb="tab-highlight"],
-[data-testid="stTabs"] [data-baseweb="tab-border"],
-div[data-baseweb="tab-highlight"],
-div[data-baseweb="tab-border"] {
-    display: none !important;
-    background-color: transparent !important;
-    height: 0px !important;
-}
-
-/* Tab container spacing */
-[data-testid="stTabs"] [data-baseweb="tab-list"],
-div[data-baseweb="tab-list"] {
+[data-testid="stTabs"] [data-baseweb="tab-list"] {
     gap: 12px !important;
-    border-bottom: none !important;
+    background: transparent !important;
+    border-bottom: none !important; /* Remove default underline */
+    padding-bottom: 10px;
 }
-
-/* Tab button styling */
-[data-testid="stTabs"] button[role="tab"],
-button[data-baseweb="tab"] {
+[data-testid="stTabs"] button[role="tab"] {
     background-color: #1f2a7c !important; /* Blue background */
-    border-radius: 999px !important;     /* Pill shape */
+    border-radius: 999px !important; /* Pill label */
     padding: 8px 24px !important;
     border: none !important;
-    opacity: 1 !important;
-    transition: all 0.2s ease !important;
+    transition: all 0.2s ease;
+    opacity: 1 !important; 
 }
-
-/* Force all text inside the tab to be white */
-[data-testid="stTabs"] button[role="tab"] *,
+[data-testid="stTabs"] button[role="tab"] *, 
 [data-testid="stTabs"] button[role="tab"] p,
-button[data-baseweb="tab"] *,
-button[data-baseweb="tab"] p {
-    color: #ffffff !important;
-    -webkit-text-fill-color: #ffffff !important;
+[data-testid="stTabs"] button[role="tab"] div,
+[data-testid="stTabs"] button[role="tab"] span {
+    color: #ffffff !important; /* White text */
     font-weight: 600 !important;
+    fill: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
 }
-
-/* Active tab (selected) */
-[data-testid="stTabs"] button[role="tab"][aria-selected="true"],
-button[data-baseweb="tab"][aria-selected="true"] {
-    background-color: #004e75 !important; /* Darker blue */
-    box-shadow: 0 4px 12px rgba(0,78,117,0.4) !important;
-}
-
-/* Hover effect */
-[data-testid="stTabs"] button[role="tab"]:hover,
-button[data-baseweb="tab"]:hover {
+[data-testid="stTabs"] button[role="tab"]:hover {
     background-color: #2b5fd9 !important;
+    transform: translateY(-1px);
+}
+[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+    background-color: #004e75 !important; /* Darker blue for active */
+    box-shadow: 0 4px 12px rgba(0,78,117,0.4);
+}
+[data-baseweb="tab-highlight"], 
+[data-baseweb="tab-border"] {
+    display: none !important; /* Force hide the red line */
 }
 
 /* PERBAIKAN WARNA EXPANDER (Author box agar terlihat) */
@@ -1624,4 +1609,174 @@ def backdate_qc():
         st.markdown("<div class='box'><b>Panduan pengisian</b><br>Menu ini <b>hanya untuk backdate</b> (tanggal sebelum hari ini). Pengisian real-time lewat <b>scan QR code di ruangan</b>.<br><br>1. Pilih peralatan dan tanggal.<br>"
                     "2. Centang kegiatan yang sudah dikerjakan (atau <i>Centang semua</i>).<br>"
                     "3. <i>Periksa Suhu/Kelembaban ruangan</i> terisi otomatis dari data Suhu & Kelembaban. Alat <i>Mobile</i> tidak terhubung ke ruang tertentu, jadi dicentang manual.<br>"
-                    "4. Catatan tampil di bawah formulir.<br>5. <i>Flat field Test (Mingguan)</i> tidak
+                    "4. Catatan tampil di bawah formulir.<br>5. <i>Flat field Test (Mingguan)</i> tidak dihitung sebagai kegiatan harian di dashboard.</div>", unsafe_allow_html=True)
+    st.markdown("**Data terakhir - {}**".format(alat))
+    df = load_qc()
+    df = df[df["alat"] == alat]
+    if len(df):
+        df = df.sort_values("id", key=lambda s: s.astype(int), ascending=False).head(15).copy()
+
+        def _n(h):
+            try:
+                return len([1 for v in json.loads(h).values() if v])
+            except Exception:
+                return 0
+        df["jumlah dicentang"] = df["hasil"].map(_n)
+        st.dataframe(df[["id", "tanggal", "petugas", "jumlah dicentang", "catatan"]], hide_index=True)
+        cc1, cc2 = st.columns([1, 3])
+        did = cc1.selectbox("Hapus data ID", list(df["id"]), key="qi_del")
+        if cc2.button("Hapus data terpilih", key="qi_del_btn"):
+            delete_qc(did)
+            st.success("Data ID {} dihapus. Muat ulang halaman untuk memperbarui tabel.".format(did))
+    else:
+        st.caption("Belum ada checklist yang diinput untuk peralatan ini.")
+
+
+def page_backdate():
+    header()
+    if not is_author():
+        st.error("Halaman ini hanya untuk author.")
+        return
+    t1, t2 = st.tabs(["🌡️ Suhu & Kelembaban", "🛠️ QC Peralatan"])
+    with t1:
+        backdate_th()
+    with t2:
+        backdate_qc()
+
+
+def _preview(sh, base_px=1400, scale=0.85): # Diperbesar dari 0.6 menjadi 0.85
+    """Preview formulir dengan ukuran tetap (85%)."""
+    wpx = int(base_px * scale)
+    components.html("<div style='overflow:auto;background:#fff;border:1px solid #d5dbe3'>{}</div>".format(sheet_to_svg(sh, wpx)),
+                    height=int(wpx * sh.height / sh.width) + 30, scrolling=True)
+
+
+def page_download():
+    header()
+    names = ["🌡️ Form Suhu & Kelembaban", "🛠️ Form Checklist QC Peralatan"]
+    if is_author():   # generator QR hanya untuk author
+        names.append("🔳 QR Code Ruangan")
+    tabs = st.tabs(names)
+    t1, t2 = tabs[0], tabs[1]
+    with t1:
+        ruang, m, y = filter_bar("dl", room_names(), "Ruangan")
+        sh = build_th_form(ruang, y, m, month_data(ruang, y, m))
+        _preview(sh)
+        fname = "Form_Suhu_Kelembaban_{}_{}_{:02d}".format(ruang.replace(" ", "_"), y, m)
+        c1, c2, c3 = st.columns(3)
+        try:
+            c1.download_button("⬇️ PDF (ruangan ini)", sheets_to_pdf([sh], "Pemeriksaan Suhu & Kelembaban - " + ruang), fname + ".pdf", "application/pdf", key="dl_pdf")
+            allsh = [build_th_form(rn, y, m, month_data(rn, y, m)) for rn in room_names()]
+            c2.download_button("⬇️ PDF (semua ruangan)", sheets_to_pdf(allsh, "Pemeriksaan Suhu & Kelembaban - Semua Ruangan"),
+                               "Form_Suhu_Kelembaban_SEMUA_{}_{:02d}.pdf".format(y, m), "application/pdf", key="dl_pdf_all")
+        except ImportError:
+            st.error("Library reportlab belum terpasang. Jalankan:  pip install reportlab")
+        rows = [{"Ruang": ruang, "Tanggal": dt.date(y, m, d).isoformat(), "Jam": "{:02d}.00".format(SHIFT_HOUR[s]), "Shift": SHIFT_NAME[s],
+                 "Suhu (°C)": e["suhu"], "Kelembaban (%)": e["hum"], "Staff": e["petugas"], "Temuan": e["ket"]}
+                for (d, s), e in sorted(month_data(ruang, y, m).items())]
+        c3.download_button("⬇️ Data (CSV)", pd.DataFrame(rows).to_csv(index=False).encode("utf-8-sig"), fname + ".csv", "text/csv", key="dl_csv")
+        # st.caption("Format mengikuti {}: grafik titik suhu (16-27 °C) dan kelembaban (10-100 %), pita merah muda = batas normal, titik merah = di luar batas.".format(FORM_CODE_TH)) <-- DIHAPUS
+    with t2:
+        alat, m2, y2 = filter_bar("dq", [d["nama"] for d in devices()], "Peralatan")
+        dev = dev_by_name(alat)
+        sh2 = build_qc_form(dev, y2, m2, qc_month(dev, y2, m2))
+        _preview(sh2)
+        fname2 = "Checklist_QC_{}_{}_{:02d}".format(alat.replace(" ", "_"), y2, m2)
+        q1, q2, q3 = st.columns(3)
+        try:
+            q1.download_button("⬇️ PDF (peralatan ini)", sheets_to_pdf([sh2], "Checklist Pemeliharaan - " + alat), fname2 + ".pdf", "application/pdf", key="dq_pdf")
+            allq = [build_qc_form(d, y2, m2, qc_month(d, y2, m2)) for d in devices()]
+            q2.download_button("⬇️ PDF (semua peralatan)", sheets_to_pdf(allq, "Checklist Pemeliharaan - Semua Peralatan"),
+                               "Checklist_QC_SEMUA_{}_{:02d}.pdf".format(y2, m2), "application/pdf", key="dq_pdf_all")
+        except ImportError:
+            st.error("Library reportlab belum terpasang. Jalankan:  pip install reportlab")
+        qd = qc_month(dev, y2, m2)
+        rows2 = []
+        for d in sorted(qd):
+            e = qd[d]
+            rows2.append({"Alat": alat, "Tanggal": dt.date(y2, m2, d).isoformat(), "Staff": e["petugas"],
+                          "Kegiatan selesai": len([i for i in dev["items"] if i in e["done"]]), "Total kegiatan": len(dev["items"]),
+                          "Belum dikerjakan": "; ".join(i for i in dev["items"] if i not in e["done"] and is_daily(i)), "Catatan": e["catatan"]})
+        q3.download_button("⬇️ Data (CSV)", pd.DataFrame(rows2).to_csv(index=False).encode("utf-8-sig"), fname2 + ".csv", "text/csv", key="dq_csv")
+        st.caption("Format mengikuti {} - centang = kegiatan selesai. Kegiatan suhu & kelembaban terisi otomatis dari data ruang terkait.".format(dev["kode"]))
+    if is_author():
+        with tabs[2]:
+            download_qr_tab()
+
+
+
+
+def download_qr_tab():
+    if not is_author():
+        return
+    st.markdown("**QR Code per ruangan** - scan membuka halaman pengisian Suhu & Kelembaban + Checklist QC untuk ruangan tersebut ({} ruangan).".format(len(room_names())))
+    base = st.text_input("Alamat aplikasi (URL Streamlit)", value=default_base_url(), key="qr_base").strip()
+    if "NAMA-APP" in base or not base.startswith("http"):
+        st.warning("Ganti dengan alamat asli aplikasi Anda, mis. https://shag-radiologi.streamlit.app, lalu cetak QR. Jangan cetak sebelum alamatnya benar.")
+    if st.button("Simpan alamat ini", key="qr_base_save"):
+        cfg = load_cfg()
+        cfg["base_url"] = base.rstrip("/")
+        save_cfg(cfg)
+        st.success("Alamat disimpan.")
+    sheets = build_qr_sheets(base)
+    _preview(sheets[0], 900)
+    st.download_button("⬇️ PDF stiker QR (semua ruangan, A4)", sheets_to_pdf(sheets, "QR Code Ruangan - Siloam Hospitals Agora", portrait=True),
+                       "QR_Ruangan_SHAG.pdf", "application/pdf", key="qr_pdf")
+    st.dataframe(pd.DataFrame([{"Ruangan": r, "Checklist QC": ", ".join(d["nama"] for d in room_devices(r)) or "-", "Link": room_url(base, r)} for r in room_names()]),
+                 hide_index=True)
+    st.caption("Cetak, laminating, tempel di dekat termometer/higrometer. Link bisa diuji dengan membuka salah satu alamat di tabel. "
+               "Untuk MRI, tempel QR di luar Zona IV (pintu/ruang kontrol) - HP tidak boleh masuk ruang magnet.")
+
+
+# =====================================================================
+# 8. NAVIGASI & SIDEBAR
+# =====================================================================
+_pages = [(page_dashboard, "Dashboard", "📊", "dashboard", True),
+          (page_ruang, "Isi Ruangan (QR)", "🔳", "ruang", False)]
+if is_author():   # backdate manual (tanggal sebelum hari ini) hanya untuk author
+    _pages.append((page_backdate, "Input Backdate (manual)", "🕘", "backdate", False))
+_pages.append((page_download, "Download & QR" if is_author() else "Download Formulir", "⬇️", "download", False))
+pg = st.navigation([st.Page(f, title="{}. {}".format(i + 1, t), icon=ic, url_path=u, default=d) for i, (f, t, ic, u, d) in enumerate(_pages)])
+
+with st.sidebar:
+    if is_author():
+        with st.expander("Pengaturan ruang & staff"):
+            cfg = load_cfg()
+            nm = st.text_input("Nama ruang baru / ruang yang diubah", key="cfg_nm")
+            c1, c2 = st.columns(2)
+            tl = c1.number_input("Suhu min (°C)", value=20.0, step=0.5, key="cfg_tl")
+            th = c2.number_input("Suhu maks (°C)", value=24.0, step=0.5, key="cfg_th")
+            hl = c1.number_input("Kelembaban min (%)", value=30.0, step=1.0, key="cfg_hl")
+            hh = c2.number_input("Kelembaban maks (%)", value=70.0, step=1.0, key="cfg_hh")
+            if st.button("Simpan ruang", key="cfg_add"):
+                if nm.strip():
+                    cfg["rooms"] = [r for r in cfg["rooms"] if r["nama"] != nm.strip()] + [dict(nama=nm.strip(), t_lo=tl, t_hi=th, h_lo=hl, h_hi=hh, tekanan=False)]
+                    save_cfg(cfg)
+                    st.success("Ruang disimpan.")
+            stf = st.text_input("Inisial staff (pisahkan koma)", value=",".join(cfg["staff"]), key="cfg_staff")
+            if st.button("Simpan staff", key="cfg_staff_btn"):
+                cfg["staff"] = [x.strip().upper() for x in stf.split(",") if x.strip()] or cfg["staff"]
+                save_cfg(cfg)
+                st.success("Staff disimpan.")
+        with st.expander("Backup & restore data"):
+            st.caption("Penyimpanan CSV di Streamlit Cloud bisa hilang saat aplikasi restart/redeploy. Backup rutin (mis. akhir bulan), lalu restore bila perlu.")
+            for label, path, cols, k in (("Suhu & kelembaban", ENTRY_FILE, ECOLS, "th"), ("QC peralatan", QC_FILE, QCOLS, "qc")):
+                st.download_button("⬇️ Backup {} (CSV)".format(label), _read(path, cols).to_csv(index=False).encode("utf-8-sig"),
+                                   os.path.basename(path), "text/csv", key="bk_" + k)
+                up = st.file_uploader("Restore {}".format(label), type="csv", key="up_" + k)
+                if up is not None and st.button("Restore {} (menimpa data saat ini)".format(label), key="rs_" + k):
+                    try:
+                        new = pd.read_csv(up, dtype=str, encoding="utf-8-sig").fillna("")
+                        miss = [c for c in cols if c not in new.columns]
+                        if miss:
+                            st.error("Kolom tidak lengkap: " + ", ".join(miss))
+                        else:
+                            os.makedirs(DATA_DIR, exist_ok=True)
+                            new[cols].to_csv(path, index=False)
+                            st.success("Data {} dipulihkan ({} baris).".format(label, len(new)))
+                    except Exception as ex:
+                        st.error("Gagal restore: {}".format(ex))
+    author_box()
+    # st.caption("{} · RAD 2209.xx/00".format(FORM_CODE_TH))  <-- DIHAPUS SESUAI PERMINTAAN
+
+pg.run()
