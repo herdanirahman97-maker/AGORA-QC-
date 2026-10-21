@@ -3,7 +3,7 @@ base = "light"
 primaryColor = "#1f2a7c"
 backgroundColor = "#ffffff"
 secondaryBackgroundColor = "#f5f8ff"
-textColor = "#1c2a6b"
+textColor = "#1122a6"
 
 [client]
 # "minimal" menyembunyikan Share, bintang, pensil (edit), ikon GitHub dan menu titik tiga dari pengunjung
