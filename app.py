@@ -1480,7 +1480,11 @@ def _preview(sh, base_px=1400, scale=0.6):
 def page_download():
     header()
     st.caption("Download formulir resmi (PDF A4 landscape) dan data (CSV)")
-    t1, t2, t3 = st.tabs(["🌡️ Form Suhu & Kelembaban", "🛠️ Form Checklist QC Peralatan", "🔳 QR Code Ruangan"])
+    names = ["🌡️ Form Suhu & Kelembaban", "🛠️ Form Checklist QC Peralatan"]
+    if is_author():   # generator QR hanya untuk author
+        names.append("🔳 QR Code Ruangan")
+    tabs = st.tabs(names)
+    t1, t2 = tabs[0], tabs[1]
     with t1:
         ruang, m, y = filter_bar("dl", room_names(), "Ruangan")
         sh = build_th_form(ruang, y, m, month_data(ruang, y, m))
@@ -1522,13 +1526,16 @@ def page_download():
                           "Belum dikerjakan": "; ".join(i for i in dev["items"] if i not in e["done"] and is_daily(i)), "Catatan": e["catatan"]})
         q3.download_button("⬇️ Data (CSV)", pd.DataFrame(rows2).to_csv(index=False).encode("utf-8-sig"), fname2 + ".csv", "text/csv", key="dq_csv")
         st.caption("Format mengikuti {} - centang = kegiatan selesai. Kegiatan suhu & kelembaban terisi otomatis dari data ruang terkait.".format(dev["kode"]))
-    with t3:
-        download_qr_tab()
+    if is_author():
+        with tabs[2]:
+            download_qr_tab()
 
 
 
 
 def download_qr_tab():
+    if not is_author():
+        return
     st.markdown("**QR Code per ruangan** - scan membuka halaman pengisian Suhu & Kelembaban + Checklist QC untuk ruangan tersebut ({} ruangan).".format(len(room_names())))
     base = st.text_input("Alamat aplikasi (URL Streamlit)", value=default_base_url(), key="qr_base").strip()
     if "NAMA-APP" in base or not base.startswith("http"):
@@ -1556,7 +1563,7 @@ _pages = [(page_dashboard, "Dashboard", "📊", "dashboard", True),
 if is_author():   # input manual (koreksi / tanggal mundur / hapus data) hanya untuk author
     _pages.append((page_input_th, "Input Suhu (manual)", "🌡️", "input-suhu", False))
     _pages.append((page_input_qc, "Input QC (manual)", "🛠️", "input-qc", False))
-_pages.append((page_download, "Download & QR", "⬇️", "download", False))
+_pages.append((page_download, "Download & QR" if is_author() else "Download Formulir", "⬇️", "download", False))
 pg = st.navigation([st.Page(f, title="{}. {}".format(i + 1, t), icon=ic, url_path=u, default=d) for i, (f, t, ic, u, d) in enumerate(_pages)])
 
 with st.sidebar:
