@@ -997,6 +997,7 @@ st.markdown("""
     --navy:#1f2a7c;--blue:#2b5fd9;--ink:#1c2a6b;--muted:#5f6b9a;--line:#e3e9f6;--soft:#f5f8ff;--ok:#2e9e5b;--bad:#d64545;--warn:#f0a81c;
     --shadow:0 6px 22px rgba(31,42,124,.10);--shadow-hi:0 14px 34px rgba(31,42,124,.20);
     --primary-color: #1f2a7c !important; /* Paksa Streamlit primary color ke biru */
+    --primary: #1f2a7c !important;       /* Antisipasi variabel lain */
 }
 :root, html, body { color-scheme: light !important; }
 html{scroll-behavior:smooth}
@@ -1117,29 +1118,30 @@ li[role="option"] { background-color: #ffffff !important; color: #1c2a6b !import
 li[role="option"]:hover, li[role="option"][aria-selected="true"] { background-color: #eef3ff !important; color: #1f2a7c !important; padding-left:18px; }
 li[role="option"][aria-selected="true"]{font-weight:700;}
 
-/* ---------- FIX TABS (ALWAYS ACTIVE, BLUE TEXT, NO RED) ---------- */
-/* 1. Paksa Streamlit primary color menjadi biru (kill red) */
-:root {
+/* ---------- NUCLEAR FIX TABS ---------- */
+/* Paksa semua warna primary di level terdalam */
+:root, html, body, .stApp, [data-testid="stAppViewContainer"] {
     --primary-color: #1f2a7c !important;
+    --primary: #1f2a7c !important;
 }
 
-/* 2. Hilangkan garis merah secara total */
-[data-baseweb="tab-highlight"],
+/* Hancurkan garis merah di bawah tab */
+[data-baseweb="tab-highlight"], 
 [data-baseweb="tab-border"],
 .stTabs [data-baseweb="tab-highlight"],
 .stTabs [data-baseweb="tab-border"],
-div[role="tablist"] > div[data-baseweb="tab-highlight"],
-div[role="tablist"] > div[data-baseweb="tab-border"] {
+[data-testid="stTabs"] [data-baseweb="tab-highlight"],
+[data-testid="stTabs"] [data-baseweb="tab-border"] {
     display: none !important;
-    background-color: transparent !important;
+    background: transparent !important;
     height: 0 !important;
     opacity: 0 !important;
 }
 
-/* 3. Base style for ALL tabs (making them look like sidebar buttons) */
+/* Base style untuk SEMUA tab */
 button[data-baseweb="tab"] {
-    background-color: #f5f8ff !important; /* Light blue background */
-    border: 1.5px solid #e3e9f6 !important;
+    background-color: #f5f8ff !important; 
+    border: 1.5px solid #c9d6f5 !important;
     border-radius: 12px !important;
     padding: 8px 20px !important;
     margin-right: 10px !important;
@@ -1147,31 +1149,27 @@ button[data-baseweb="tab"] {
     outline: none !important;
 }
 
-/* 4. Force text color to dark blue for all nested elements */
+/* Nuke semua text color (termasuk inline styles) */
 button[data-baseweb="tab"] *, 
 button[data-baseweb="tab"] p,
 button[data-baseweb="tab"] div,
-button[data-baseweb="tab"] span {
+button[data-baseweb="tab"] span,
+[data-testid="stTabs"] button[data-baseweb="tab"] * {
     color: #1f2a7c !important;
     -webkit-text-fill-color: #1f2a7c !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
     fill: #1f2a7c !important;
 }
 
-/* 5. Active tab styling (same as sidebar active) */
-button[data-baseweb="tab"][aria-selected="true"] {
-    background: linear-gradient(90deg, #e6edff, #f5f8ff) !important;
-    border: 1.5px solid #c9d6f5 !important;
-    box-shadow: inset 4px 0 0 #1f2a7c !important; /* Left blue border */
+/* Style untuk tab yang aktif (warna background lebih gelap, border tegas) */
+button[data-baseweb="tab"][aria-selected="true"],
+[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
+    background: linear-gradient(90deg, #e6edff, #c9d6f5) !important; 
+    border: 1.5px solid #1f2a7c !important;
+    box-shadow: inset 4px 0 0 #1f2a7c !important; 
 }
 
-/* 6. Hover effect */
-button[data-baseweb="tab"]:hover {
-    background-color: #eef3ff !important;
-    border-color: #c9d6f5 !important;
-}
-
-/* PERBAIKAN WARNA EXPANDER (Author box agar terlihat) */
+/* PERBAIKAN WARNA EXPANDER */
 [data-testid="stExpander"]{border:1px solid var(--line) !important;border-radius:16px !important;background:#fff;box-shadow:var(--shadow);transition:box-shadow .25s}
 [data-testid="stExpander"]:hover{box-shadow:var(--shadow-hi)}
 [data-testid="stExpander"] summary, 
