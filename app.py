@@ -23,7 +23,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 st.set_page_config(
-    page_title="Radiologi - Siloam Hospitals Agora",
+    page_title="Digital Monitoring QC Harian Radiologi SHAG {}".format(2026),
     page_icon="🏥",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -33,6 +33,8 @@ st.set_page_config(
 # =====================================================================
 # 0. KONFIGURASI UTAMA (aman diubah)
 # =====================================================================
+APP_YEAR = 2026
+APP_TITLE = "Digital Monitoring QC Harian Departemen Radiologi SHAG Tahun {}".format(APP_YEAR)
 HOSPITAL = "Siloam Hospitals"
 SITE = "AGORA"
 DEPT_LINE = "INSTALASI RADIOLOGI SILOAM HOSPITALS AGORA"
@@ -587,6 +589,15 @@ class Sheet:
         self.line(cx - 1.1, cy + 2.9, cx + 3.6, cy - 3.0, color, lw)
 
 
+def _initials(sh, x, y, w, h, t):
+    """Inisial staff: tebal & besar, ditulis tegak (diputar 90 derajat) agar muat di sel sempit."""
+    t = (t or "").strip()
+    if not t:
+        return
+    size = 9.2 if len(t) <= 2 else 7.6
+    sh.text(x + w / 2 + size * 0.35, y + h / 2, t, size, True, BLACK, "middle", 90)
+
+
 def _logo_into(sh, x, y, box_w, box_h):
     logo = _logo_b64()
     if logo:
@@ -605,7 +616,7 @@ SUBW = 10.0
 DAYW = SUBW * 3
 XE = XD + 31 * DAYW
 LW = 0.5
-CELL = 22.0   # tinggi 1 label (= 2 baris kecil)
+CELL = 21.0   # tinggi 1 label (= 2 baris kecil)
 
 
 def build_th_form(ruang, y, m, data):
@@ -632,7 +643,7 @@ def build_th_form(ruang, y, m, data):
     sh.text(757, 44, ": didalam batas normal", 8.5)
 
     def block(y0, kind):
-        HT, HJ, HN = 13.0, 11.0, 13.0
+        HT, HJ, HN = 13.0, 11.0, 24.0
         # tanggal & jam
         sh.rect(X0, y0, XD - X0, HT, None, BLACK, LW)
         sh.ctext(X0, y0, XD - X0, HT, "Tanggal", 7.5)
@@ -643,9 +654,9 @@ def build_th_form(ruang, y, m, data):
             x = XD + (d - 1) * DAYW
             sh.rect(x, y0, DAYW, HT, None, BLACK, LW)
             sh.ctext(x, y0, DAYW, HT, str(d), 7.5)
-            for k, hh in enumerate((8, 14, 22)):
+            for k, ch in enumerate("PSM"):
                 sh.rect(x + k * SUBW, y1, SUBW, HJ, None, BLACK, LW)
-                sh.ctext(x + k * SUBW, y1, SUBW, HJ, str(hh), 5)
+                sh.ctext(x + k * SUBW, y1, SUBW, HJ, ch, 6.5, True)
         gt = y1 + HJ
         labels = t_labels if kind == "t" else h_labels
         gh = len(labels) * CELL
@@ -683,8 +694,8 @@ def build_th_form(ruang, y, m, data):
                 x = XD + (d - 1) * DAYW + k * SUBW
                 sh.rect(x, yn, SUBW, HN, None, BLACK, LW)
                 e = data.get((d, s))
-                if e and e["petugas"]:
-                    sh.ctext(x, yn, SUBW, HN, e["petugas"], 5.3)
+                if e:
+                    _initials(sh, x, yn, SUBW, HN, e["petugas"])
         # titik data
         for (d, s), e in data.items():
             v = e["suhu"] if kind == "t" else e["hum"]
@@ -703,7 +714,8 @@ def build_th_form(ruang, y, m, data):
     sh.text(X0 + 52, yb + 15, ":", 8.5)
     sh.text(X0 + 62, yb + 15, "1) Hubungi teknisi bila terjadi ketidaksesuaian pengukuran batas normal", 8.5)
     sh.text(X0 + 62, yb + 26, "2) Batas suhu dan kelembaban berdasarkan Permenkes No 24 Tahun 2020 dan Manual Book Alat", 8.5)
-    yend = yb + 30
+    sh.text(X0 + 62, yb + 37, "3) P = Pagi (pukul 08.00), S = Siang (pukul 14.00), M = Malam (pukul 22.00)", 8.5)
+    yend = yb + 41
     notes = []
     for (d, s), e in sorted(data.items()):
         if e.get("ket"):
@@ -772,7 +784,7 @@ def build_qc_form(dev, y, m, data):
         sh.rect(x, ys, DAYW_, NH, None, BLACK, LW)
         e = data.get(d)
         if e and e["petugas"]:
-            sh.ctext(x, ys, DAYW_, NH, e["petugas"], 6.2)
+            sh.ctext(x, ys, DAYW_, NH, e["petugas"], 8.5 if len(e["petugas"]) <= 2 else 7, True)
     yend = ys + NH
     sh.text(XE_, yend + 12, dev["kode"], 8.5, False, BLACK, "end")
     notes = []
@@ -978,56 +990,150 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&display=swap');
 
+:root{--navy:#1f2a7c;--blue:#2b5fd9;--ink:#1c2a6b;--muted:#5f6b9a;--line:#e3e9f6;--soft:#f5f8ff;--ok:#2e9e5b;--bad:#d64545;--warn:#f0a81c;
+--shadow:0 6px 22px rgba(31,42,124,.10);--shadow-hi:0 14px 34px rgba(31,42,124,.20)}
 :root, html, body { color-scheme: light !important; }
+html{scroll-behavior:smooth}
 html, body, [class*="css"], .stApp, .stMarkdown, .stButton, .stTextInput,
 .stSelectbox, .stDateInput, .stNumberInput, .stRadio, .stCheckbox, .stDataFrame,
 [data-testid="stSidebar"], [data-testid="stHeader"], [data-testid="stAppViewContainer"] {
     font-family: 'Lexend', 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
     color-scheme: light !important;
 }
-.stApp{background:#f4f7fa !important;color:#111 !important}
-[data-testid=stSidebar]{background:#ffffff !important;color:#111 !important}
+.stApp{background:#ffffff !important;color:var(--ink)}
+.stApp h1,.stApp h2,.stApp h3,.stApp h4{color:var(--navy) !important;font-weight:700;letter-spacing:.2px}
+.stApp [data-testid="stWidgetLabel"] *{color:var(--ink) !important;font-weight:500}
+.stApp [data-testid="stCaptionContainer"], .stApp [data-testid="stCaptionContainer"] *{color:var(--muted) !important}
 [data-testid="stHeader"]{background:transparent !important}
-.block-container{padding-top:1.2rem;max-width:100%}
+.block-container{padding-top:1.4rem;max-width:100%;animation:fadeIn .5s ease both}
 [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], [data-testid="stAppDeployButton"],
 .stAppDeployButton, #MainMenu, footer, [data-testid="stMainMenu"]{display:none !important;visibility:hidden !important}
-button[kind="primary"]{background:#0b5cab;border-color:#0b5cab}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#c9d6f5;border-radius:8px}::-webkit-scrollbar-thumb:hover{background:#9db8ff}
 
-.kp{display:flex;gap:12px;margin:6px 0 14px;flex-wrap:wrap}.kc{flex:1;min-width:150px;background:#fff;border-radius:8px;padding:12px 16px;box-shadow:0 1px 3px #0001;border-top:4px solid #0b5cab}
-.kc .t{font-size:12px;color:#667}.kc .v{font-size:28px;font-weight:700;margin:2px 0;color:#111}.kc .s{font-size:11px;color:#778}
-.cal{border-collapse:collapse;font-size:11px}.cal td,.cal th{border:1px solid #fff;text-align:center;min-width:26px;height:24px;padding:0 2px}
-.cal th{background:#cfe2f3;color:#124}.cal td.l{text-align:left;font-weight:700;background:#eef4fb;padding:0 8px;min-width:80px;white-space:nowrap}
+/* ---------- animasi ---------- */
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes shimmer{from{background-position:0% 0}to{background-position:300% 0}}
+@keyframes blob{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(26px,18px) scale(1.12)}}
+@keyframes dropIn{from{opacity:0;transform:translateY(-8px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes pulseRing{0%{box-shadow:0 0 0 0 rgba(214,69,69,.35)}70%{box-shadow:0 0 0 14px rgba(214,69,69,0)}100%{box-shadow:0 0 0 0 rgba(214,69,69,0)}}
+@property --n{syntax:'<integer>';initial-value:0;inherits:false}
+@keyframes cntup{from{--n:0}}
+.cnt{counter-reset:num var(--n);animation:cntup 1.2s cubic-bezier(.2,.8,.2,1) both}
+.cnt::after{content:counter(num) attr(data-s)}
+
+/* ---------- header ---------- */
+.hero{position:relative;overflow:hidden;background:#fff;border:1px solid var(--line);border-radius:22px;padding:30px 28px 24px;margin-bottom:22px;text-align:center;box-shadow:var(--shadow);animation:fadeUp .6s ease both}
+.hero::before{content:'';position:absolute;left:0;right:0;top:0;height:5px;background:linear-gradient(90deg,#1f2a7c,#2b5fd9,#27b5c9,#ffb81c,#2b5fd9,#1f2a7c);background-size:300% 100%;animation:shimmer 6s linear infinite}
+.hero .blob{position:absolute;border-radius:50%;filter:blur(38px);opacity:.35;pointer-events:none}
+.hero .b1{width:220px;height:220px;background:#9db8ff;left:-60px;top:-80px;animation:blob 9s ease-in-out infinite}
+.hero .b2{width:200px;height:200px;background:#ffe08a;right:-50px;bottom:-90px;animation:blob 11s ease-in-out infinite reverse}
+.hero > *:not(.blob){position:relative;z-index:1}
+.hero img{height:56px;margin-bottom:14px;animation:floaty 4s ease-in-out infinite}
+.hero .ttl{font-size:clamp(20px,2.9vw,34px);font-weight:800;color:#1f2a7c;line-height:1.25;letter-spacing:.2px;margin:0 auto 10px;max-width:980px}
+.hero .sub{font-size:clamp(12px,1.4vw,15px);color:#5f6b9a;letter-spacing:.6px;margin-bottom:14px}
+.hero .code{display:inline-block;font-size:12px;color:#1f2a7c;background:#f5f8ff;border:1px solid #e3e9f6;padding:5px 14px;border-radius:999px}
+.hero-c{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:12px 16px;margin-bottom:14px;box-shadow:var(--shadow);animation:fadeUp .5s ease both}
+.hero-c img{height:36px;animation:floaty 4s ease-in-out infinite}
+.hero-c .ttl{font-size:14px;font-weight:800;color:#1f2a7c;line-height:1.3}
+.hero-c .sub{font-size:11px;color:#5f6b9a;margin-top:2px}
+
+/* ---------- kartu KPI (melayang) ---------- */
+.kp{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:8px 0 18px}
+.kc{--c:#1f2a7c;background:#fff;border:1px solid var(--line);border-top:4px solid var(--c);border-radius:16px;padding:14px 18px;box-shadow:var(--shadow);
+transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s;animation:fadeUp .55s ease both}
+.kc:nth-child(2){animation-delay:.06s}.kc:nth-child(3){animation-delay:.12s}.kc:nth-child(4){animation-delay:.18s}.kc:nth-child(5){animation-delay:.24s}.kc:nth-child(6){animation-delay:.3s}
+.kc:hover{transform:translateY(-6px);box-shadow:var(--shadow-hi)}
+.kc .t{font-size:12px;color:#5f6b9a;font-weight:500}.kc .v{font-size:32px;font-weight:800;margin:4px 0 2px;color:#1f2a7c;line-height:1.1}.kc .s{font-size:11px;color:#5f6b9a}
+
+/* ---------- kalender ---------- */
+.cal{border-collapse:separate;border-spacing:2px;font-size:11px}
+.cal td,.cal th{text-align:center;min-width:26px;height:26px;padding:0 2px;border-radius:6px;transition:transform .15s,box-shadow .15s}
+.cal th{background:#eaf0ff;color:#1f2a7c;font-weight:600}
+.cal td.l{text-align:left;font-weight:700;background:#f5f8ff;color:#1f2a7c;padding:0 10px;min-width:96px;white-space:nowrap;border-radius:8px}
+.cal td:not(.l):hover{transform:scale(1.35);box-shadow:0 6px 14px rgba(31,42,124,.28);position:relative;z-index:2}
 .s-ok{background:#2e9e5b;color:#fff}.s-high{background:#d64545;color:#fff;font-weight:700}.s-low{background:#f0a81c;color:#2b2000;font-weight:700}
-.s-empty{background:#9aa5b1;color:#fff}.s-future{background:#eef1f5;color:#bbb}
-.lg2{display:flex;gap:16px;font-size:12px;margin:8px 0;flex-wrap:wrap}.lg2 i{display:inline-block;width:14px;height:14px;border-radius:3px;margin-right:6px;vertical-align:-3px}
-.box{background:#fff;border-radius:8px;padding:12px 16px;box-shadow:0 1px 3px #0001;margin-bottom:10px;font-size:13px;line-height:1.7}
-.alert{background:#fdecec;border-left:5px solid #d64545;border-radius:6px;padding:10px 16px;margin:4px 0 12px;font-size:13px;line-height:1.7;color:#5b1111}
+.s-empty{background:#9aa5b1;color:#fff}.s-future{background:#eef1f8;color:#bbb}
+.lg2{display:flex;gap:16px;font-size:12px;margin:10px 0;flex-wrap:wrap;color:#1c2a6b}.lg2 i{display:inline-block;width:14px;height:14px;border-radius:4px;margin-right:6px;vertical-align:-3px}
+
+/* ---------- kotak, peringatan, floating ---------- */
+.box{background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px 18px;box-shadow:var(--shadow);margin-bottom:12px;font-size:13px;line-height:1.75;color:#1c2a6b;
+transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s;animation:fadeUp .5s ease both}
+.box:hover{transform:translateY(-3px);box-shadow:var(--shadow-hi)}
+.alert{background:#fff4f4;border:1px solid #f5c6c6;border-left:6px solid #d64545;border-radius:14px;padding:12px 18px;margin:4px 0 14px;font-size:13px;line-height:1.75;color:#7a1f1f;
+animation:fadeUp .5s ease both,pulseRing 2.4s ease-out infinite}
 .hint{font-size:12px;margin:-8px 0 8px 2px}.hint.ok{color:#2e9e5b}.hint.bad{color:#d64545}
+.empty{text-align:center;padding:46px 20px;background:#f5f8ff;border:1.5px dashed #c9d6f5;border-radius:22px;color:#1f2a7c;animation:fadeUp .5s ease both}
+.empty .ic{font-size:56px;display:inline-block;animation:floaty 3.2s ease-in-out infinite}
+.empty .h{font-size:20px;font-weight:700;margin:8px 0 4px}.empty .p{font-size:13px;color:#5f6b9a}
+.fab{position:fixed;right:18px;bottom:76px;z-index:999;background:linear-gradient(135deg,#1f2a7c,#2b5fd9);color:#fff;border-radius:999px;padding:10px 18px;font-size:13px;font-weight:600;
+box-shadow:0 10px 28px rgba(31,42,124,.38);animation:floaty 3.4s ease-in-out infinite;white-space:nowrap}
+.fab small{opacity:.85;font-weight:400;margin-left:6px}
+
+/* ---------- sidebar ---------- */
+[data-testid="stSidebar"]{background:#ffffff !important;border-right:1px solid var(--line)}
+[data-testid="stSidebarNavLink"], [data-testid="stSidebarNav"] a{border-radius:12px !important;margin:3px 8px !important;transition:background .18s,transform .18s,box-shadow .18s}
+[data-testid="stSidebarNavLink"] *, [data-testid="stSidebarNav"] a *{color:#1f2a7c !important;font-weight:500}
+[data-testid="stSidebarNavLink"]:hover, [data-testid="stSidebarNav"] a:hover{background:#eef3ff !important;transform:translateX(5px)}
+[data-testid="stSidebarNavLink"][aria-current="page"], [data-testid="stSidebarNav"] a[aria-current="page"]{background:linear-gradient(90deg,#e6edff,#f5f8ff) !important;box-shadow:inset 4px 0 0 #1f2a7c}
+[data-testid="stSidebarNavLink"][aria-current="page"] *{font-weight:700}
+
+/* ---------- tombol ---------- */
+.stButton>button, .stDownloadButton>button{border-radius:999px;border:1.5px solid var(--line);background:#fff;color:#1f2a7c;font-weight:600;padding:.45rem 1.2rem;
+transition:transform .2s,box-shadow .2s,border-color .2s,color .2s;box-shadow:0 1px 2px rgba(31,42,124,.08)}
+.stButton>button:hover, .stDownloadButton>button:hover{transform:translateY(-2px);box-shadow:0 10px 22px rgba(31,42,124,.18);border-color:#2b5fd9;color:#2b5fd9}
+.stButton>button:active, .stDownloadButton>button:active{transform:translateY(0) scale(.98)}
+.stButton>button[kind="primary"], [data-testid="stBaseButton-primary"]{background:linear-gradient(135deg,#1f2a7c,#2b5fd9) !important;border:none !important;color:#fff !important}
+.stButton>button[kind="primary"] *, [data-testid="stBaseButton-primary"] *{color:#fff !important}
+.stButton>button[kind="primary"]:hover, [data-testid="stBaseButton-primary"]:hover{box-shadow:0 12px 26px rgba(43,95,217,.45)}
+.stButton>button:disabled, .stDownloadButton>button:disabled{opacity:.45;transform:none;box-shadow:none}
+
+/* ---------- isian & dropdown (bullet drop) ---------- */
+div[data-baseweb="input"], div[data-baseweb="textarea"], div[data-baseweb="select"] > div{border-radius:12px !important;background:#fff !important;border:1.5px solid var(--line) !important;
+transition:border-color .18s,box-shadow .18s,transform .18s}
+div[data-baseweb="input"]:hover, div[data-baseweb="textarea"]:hover, div[data-baseweb="select"] > div:hover{border-color:#9db8ff !important}
+div[data-baseweb="input"]:focus-within, div[data-baseweb="textarea"]:focus-within, div[data-baseweb="select"] > div:focus-within{border-color:#2b5fd9 !important;box-shadow:0 0 0 4px rgba(43,95,217,.16)}
+div[data-baseweb="select"] *{color:#1c2a6b}
+div[data-baseweb="popover"] ul[role="listbox"]{border-radius:14px;border:1px solid var(--line);padding:6px;background:#fff;box-shadow:0 16px 38px rgba(31,42,124,.20);animation:dropIn .18s ease-out}
+ul[role="listbox"]{list-style:none !important;margin:0}
+li[role="option"]{list-style:none !important;border-radius:10px;margin:2px 0;color:#1c2a6b;transition:background .12s,padding-left .12s}
+li[role="option"]:hover, li[role="option"][aria-selected="true"]{background:#eef3ff !important;color:#1f2a7c;padding-left:18px}
+li[role="option"][aria-selected="true"]{font-weight:700}
+div[role="radiogroup"] > label{background:#fff;border:1.5px solid var(--line);border-radius:999px;padding:6px 16px 6px 10px;margin-right:8px;cursor:pointer;transition:all .18s}
+div[role="radiogroup"] > label:hover{border-color:#2b5fd9;transform:translateY(-1px);box-shadow:0 6px 14px rgba(31,42,124,.12)}
+div[role="radiogroup"] > label:has(input:checked){background:linear-gradient(135deg,#1f2a7c,#2b5fd9);border-color:transparent}
+div[role="radiogroup"] > label:has(input:checked) *{color:#fff !important}
+label[data-baseweb="checkbox"]{padding:4px 8px;border-radius:10px;transition:background .15s}
+label[data-baseweb="checkbox"]:hover{background:#f5f8ff}
+
+/* ---------- tab, expander, tabel ---------- */
+button[data-baseweb="tab"]{font-weight:600;color:#5f6b9a !important;border-radius:12px 12px 0 0;transition:color .18s,background .18s}
+button[data-baseweb="tab"]:hover{color:#1f2a7c !important;background:#f0f4ff}
+button[data-baseweb="tab"][aria-selected="true"]{color:#1f2a7c !important}
+div[data-baseweb="tab-highlight"]{background:linear-gradient(90deg,#1f2a7c,#2b5fd9) !important;height:3px !important;border-radius:3px}
+[data-testid="stExpander"]{border:1px solid var(--line) !important;border-radius:16px !important;background:#fff;box-shadow:var(--shadow);transition:box-shadow .25s}
+[data-testid="stExpander"]:hover{box-shadow:var(--shadow-hi)}
+[data-testid="stExpander"] summary{font-weight:600}
+[data-testid="stDataFrame"]{border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
+[data-testid="stAlert"]{border-radius:14px}
+@media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
 </style>
 """, unsafe_allow_html=True)
 
 
 def header(compact=False):
-    """Header dengan style inline supaya tidak ditimpa markdown Streamlit."""
+    """Header (kelas CSS di blok style di atas). Teks dibuat satu baris agar tidak dianggap code-block oleh markdown."""
     logo = _logo_b64()
+    img = "<img src='data:image/png;base64,{}'>".format(logo) if logo else ""
     if compact:   # versi ringkas untuk halaman QR (layar HP)
-        img = "<img src='data:image/png;base64,{}' style='height:34px'>".format(logo) if logo else ""
-        st.markdown("<div style='display:flex;align-items:center;gap:12px;background:#f8f9fb;padding:10px 14px;border-radius:10px;margin-bottom:12px;border:1px solid #e1e5eb'>"
-                    "{}<div><div style='font-size:17px;font-weight:800;color:#0b5cab;letter-spacing:1px'>DIGITAL MONITORING SHAG</div>"
-                    "<div style='font-size:11px;color:#6b7280'>Instalasi Radiologi &middot; Siloam Hospitals Agora</div></div></div>".format(img), unsafe_allow_html=True)
+        st.markdown("<div class='hero-c'>{}<div><div class='ttl'>{}</div><div class='sub'>Instalasi Radiologi &middot; Siloam Hospitals Agora</div></div></div>".format(
+            img, escape(APP_TITLE)), unsafe_allow_html=True)
         return
-    img = "<img src='data:image/png;base64,{}' style='height:54px;margin:0 0 14px'>".format(logo) if logo else ""
-    st.markdown(
-        """
-        <div style="background:#f8f9fb; padding:28px 30px; border-radius:12px; margin-bottom:20px; text-align:center; box-shadow:0 1px 4px rgba(0,0,0,.05); border: 1px solid #e1e5eb;">
-            {img}
-            <div style="font-size:44px; margin:0 0 6px; font-weight:800; letter-spacing:2px; color:#0b5cab; line-height:1.2;">DIGITAL MONITORING SHAG</div>
-            <div style="font-size:15px; margin:0 0 22px; font-style:italic; color:#6b7280; letter-spacing:1px;">Siloam Hospitals Agora &middot; Suhu &middot; Kelembaban &middot; QC Peralatan</div>
-            <div style="font-size:15px; margin:0 0 14px; font-weight:700; color:#374151; line-height:1.6; letter-spacing:0.5px;">PEMERIKSAAN HARIAN SUHU &amp; KELEMBABAN RUANG RADIOLOGY<br>DAN CHECKLIST PEMELIHARAAN PERALATAN RADIOLOGI</div>
-            <div style="font-size:13px; margin:0; color:#9ca3af;">Instalasi Radiologi &nbsp;|&nbsp; {code}</div>
-        </div>
-        """.format(img=img, code=FORM_CODE_TH + " &nbsp;&middot;&nbsp; RAD 2209.xx/00"),
-        unsafe_allow_html=True)
+    st.markdown("<div class='hero'><span class='blob b1'></span><span class='blob b2'></span>{}<div class='ttl'>{}</div>"
+                "<div class='sub'>Siloam Hospitals Agora &middot; Suhu &middot; Kelembaban &middot; QC Peralatan</div>"
+                "<div class='code'>Instalasi Radiologi &nbsp;|&nbsp; {} &nbsp;&middot;&nbsp; RAD 2209.xx/00</div></div>".format(
+                    img, escape(APP_TITLE), FORM_CODE_TH), unsafe_allow_html=True)
 
 
 def month_year_bar(prefix, cols=(1.6, 1)):
@@ -1101,12 +1207,12 @@ def dash_th():
         st.info("Belum ada slot pengukuran yang jatuh tempo pada bulan ini.")
     st.markdown("""
     <div class='kp'>
-      <div class='kc'><div class='t'>Persentase pengisian</div><div class='v'>{pf:.0f}%</div><div class='s'>{fd} data terisi dari {d} slot jatuh tempo</div></div>
-      <div class='kc' style='border-top-color:#2e9e5b'><div class='t'>Suhu dalam batas ({lo:g}&ndash;{hi:g} &deg;C)</div><div class='v' style='color:#2e9e5b'>{po:.0f}%</div><div class='s'>{o} dari {f} data terisi</div></div>
-      <div class='kc' style='border-top-color:#2e9e5b'><div class='t'>Kelembaban dalam batas ({hl:g}&ndash;{hh:g} %)</div><div class='v' style='color:#2e9e5b'>{ph:.0f}%</div><div class='s'>{ho} dari {f} data terisi</div></div>
-      <div class='kc' style='border-top-color:#d64545'><div class='t'>Suhu DI ATAS batas</div><div class='v' style='color:#d64545'>{hi_n}</div><div class='s'>slot pengukuran</div></div>
-      <div class='kc' style='border-top-color:#f0a81c'><div class='t'>Suhu di bawah batas</div><div class='v' style='color:#d98e00'>{lo_n}</div><div class='s'>slot pengukuran</div></div>
-      <div class='kc' style='border-top-color:#9aa5b1'><div class='t'>Slot kosong / belum diisi</div><div class='v' style='color:#667'>{e}</div><div class='s'>{fe} tanggal kosong total</div></div>
+      <div class='kc'><div class='t'>Persentase pengisian</div><div class='v'><span class='cnt' style='--n:{pf:.0f}' data-s='%'></span></div><div class='s'>{fd} data terisi dari {d} slot jatuh tempo</div></div>
+      <div class='kc' style='border-top-color:#2e9e5b'><div class='t'>Suhu dalam batas ({lo:g}&ndash;{hi:g} &deg;C)</div><div class='v' style='color:#2e9e5b'><span class='cnt' style='--n:{po:.0f}' data-s='%'></span></div><div class='s'>{o} dari {f} data terisi</div></div>
+      <div class='kc' style='border-top-color:#2e9e5b'><div class='t'>Kelembaban dalam batas ({hl:g}&ndash;{hh:g} %)</div><div class='v' style='color:#2e9e5b'><span class='cnt' style='--n:{ph:.0f}' data-s='%'></span></div><div class='s'>{ho} dari {f} data terisi</div></div>
+      <div class='kc' style='border-top-color:#d64545'><div class='t'>Suhu DI ATAS batas</div><div class='v' style='color:#d64545'><span class='cnt' style='--n:{hi_n}' data-s=''></span></div><div class='s'>slot pengukuran</div></div>
+      <div class='kc' style='border-top-color:#f0a81c'><div class='t'>Suhu di bawah batas</div><div class='v' style='color:#d98e00'><span class='cnt' style='--n:{lo_n}' data-s=''></span></div><div class='s'>slot pengukuran</div></div>
+      <div class='kc' style='border-top-color:#9aa5b1'><div class='t'>Slot kosong / belum diisi</div><div class='v' style='color:#667'><span class='cnt' style='--n:{e}' data-s=''></span></div><div class='s'>{fe} tanggal kosong total</div></div>
     </div>""".format(pf=an["pct_fill"], f=an["filled"], fd=an["filled_due"], d=an["due"], lo=std["t_lo"], hi=std["t_hi"], po=an["pct_ok"], o=an["ok"],
                      hl=std["h_lo"], hh=std["h_hi"], ph=an["pct_hum"], ho=an["hum_ok"],
                      hi_n=len(an["high"]), lo_n=len(an["low"]), e=an["n_empty"], fe=len(an["full_empty"])), unsafe_allow_html=True)
@@ -1194,10 +1300,10 @@ def dash_qc():
         st.info("Belum ada hari yang jatuh tempo / terisi pada bulan ini.")
     st.markdown("""
     <div class='kp'>
-      <div class='kc'><div class='t'>Hari checklist lengkap</div><div class='v'>{pf:.0f}%</div><div class='s'>{full} dari {cnt} hari-alat jatuh tempo</div></div>
-      <div class='kc' style='border-top-color:#2e9e5b'><div class='t'>Kegiatan terselesaikan</div><div class='v' style='color:#2e9e5b'>{pi:.0f}%</div><div class='s'>{idn} dari {itot} kegiatan harian</div></div>
-      <div class='kc' style='border-top-color:#f0a81c'><div class='t'>Hari terisi sebagian</div><div class='v' style='color:#d98e00'>{part}</div><div class='s'>hari-alat belum lengkap</div></div>
-      <div class='kc' style='border-top-color:#9aa5b1'><div class='t'>Hari kosong</div><div class='v' style='color:#667'>{emp}</div><div class='s'>hari-alat belum diisi</div></div>
+      <div class='kc'><div class='t'>Hari checklist lengkap</div><div class='v'><span class='cnt' style='--n:{pf:.0f}' data-s='%'></span></div><div class='s'>{full} dari {cnt} hari-alat jatuh tempo</div></div>
+      <div class='kc' style='border-top-color:#2e9e5b'><div class='t'>Kegiatan terselesaikan</div><div class='v' style='color:#2e9e5b'><span class='cnt' style='--n:{pi:.0f}' data-s='%'></span></div><div class='s'>{idn} dari {itot} kegiatan harian</div></div>
+      <div class='kc' style='border-top-color:#f0a81c'><div class='t'>Hari terisi sebagian</div><div class='v' style='color:#d98e00'><span class='cnt' style='--n:{part}' data-s=''></span></div><div class='s'>hari-alat belum lengkap</div></div>
+      <div class='kc' style='border-top-color:#9aa5b1'><div class='t'>Hari kosong</div><div class='v' style='color:#667'><span class='cnt' style='--n:{emp}' data-s=''></span></div><div class='s'>hari-alat belum diisi</div></div>
     </div>""".format(pf=(tot_full / tot_counted * 100 if tot_counted else 0), full=tot_full, cnt=tot_counted,
                      pi=(tot_idone / tot_itotal * 100 if tot_itotal else 0), idn=tot_idone, itot=tot_itotal, part=tot_part, emp=tot_empty),
                 unsafe_allow_html=True)
@@ -1374,7 +1480,8 @@ def page_ruang():
     elif locked in names:
         ruang = locked
     else:
-        st.info("Scan QR code yang ada di ruangan untuk membuka formulir pengisian ruangan tersebut.")
+        st.markdown("<div class='empty'><div class='ic'>🔳</div><div class='h'>Scan QR code di ruangan</div>"
+                    "<div class='p'>Arahkan kamera HP ke QR code yang ditempel di ruangan untuk membuka formulir pengisian ruangan tersebut.</div></div>", unsafe_allow_html=True)
         return
     n = now()
     tgl = n.date()
@@ -1389,6 +1496,7 @@ def page_ruang():
     sk = shift_now()
     shift_key = st.radio("Jam pemantauan", list(SHIFT_LABEL.keys()), index=list("PSM").index(sk), format_func=lambda k: SHIFT_LABEL[k],
                          horizontal=True, key="qr_shift_" + sk)
+    st.markdown("<div class='fab'>{} {} <small>{}</small></div>".format("🔓" if is_author() else "🔒", escape(ruang), SHIFT_NAME[shift_key]), unsafe_allow_html=True)
     th_entry_form(ruang, tgl, shift_key, petugas, "qr")
     st.markdown("### 2. Checklist QC Peralatan")
     devs = room_devices(ruang)
@@ -1399,23 +1507,23 @@ def page_ruang():
             qc_checklist_ui(dev, tgl, petugas, "qr")
 
 
-def page_input_th():
-    header()
-    if not is_author():
-        st.error("Halaman ini hanya untuk author.")
-        return
-    st.caption("Input manual suhu & kelembaban (untuk koreksi / mengisi tanggal sebelumnya) - {}".format(FORM_CODE_TH))
+def YESTERDAY():
+    return TODAY() - dt.timedelta(days=1)
+
+
+def backdate_th():
+    st.caption("Backdate suhu & kelembaban - hanya tanggal sebelum hari ini ({}). Pengisian real-time lewat QR code di ruangan.".format(FORM_CODE_TH))
     cfg = load_cfg()
     left, right = st.columns([2.2, 1], gap="large")
     with left:
         ruang = st.selectbox("Ruangan *", room_names(), key="in_ruang")
         c1, c2 = st.columns(2)
-        tgl = c1.date_input("Tanggal pengukuran *", value=TODAY(), max_value=TODAY(), key="in_tgl")
+        tgl = c1.date_input("Tanggal backdate *", value=YESTERDAY(), max_value=YESTERDAY(), key="in_tgl")
         shift_key = c2.radio("Jam pemantauan *", list(SHIFT_LABEL.keys()), format_func=lambda k: SHIFT_LABEL[k], horizontal=True, key="in_shift")
         petugas = st.selectbox("Nama staff (inisial) *", cfg["staff"], key="in_petugas")
         th_entry_form(ruang, tgl, shift_key, petugas, "in")
     with right:
-        st.markdown("<div class='box'><b>Panduan pengisian</b><br>Pengisian rutin sebaiknya lewat <b>scan QR code di ruangan</b> (menu Isi Ruangan). Halaman ini untuk koreksi atau mengisi tanggal sebelumnya.<br><br>"
+        st.markdown("<div class='box'><b>Panduan pengisian</b><br>Menu ini <b>hanya untuk backdate</b> (tanggal sebelum hari ini). Pengisian real-time dilakukan lewat <b>scan QR code di ruangan</b>.<br><br>"
                     "1. Pilih ruangan, tanggal, dan jam (08.00 · 14.00 · 22.00).<br>2. Isi suhu & kelembaban sesuai hasil baca alat.<br>3. Pilih inisial staff.<br>"
                     "4. Bila di luar batas standar, temuan & tindakan korektif wajib diisi dan segera hubungi teknisi.<br><br>"
                     "Suhu & kelembaban yang diinput otomatis menandai 2 kegiatan pertama pada checklist QC peralatan terkait.</div>", unsafe_allow_html=True)
@@ -1434,24 +1542,20 @@ def page_input_th():
         st.caption("Belum ada data yang diinput untuk ruangan ini.")
 
 
-def page_input_qc():
-    header()
-    if not is_author():
-        st.error("Halaman ini hanya untuk author.")
-        return
-    st.caption("Input manual checklist QC (untuk koreksi / mengisi tanggal sebelumnya)")
+def backdate_qc():
+    st.caption("Backdate checklist QC - hanya tanggal sebelum hari ini. Pengisian real-time lewat QR code di ruangan.")
     cfg = load_cfg()
     left, right = st.columns([2.2, 1], gap="large")
     with left:
         alat = st.selectbox("Peralatan *", [d["nama"] for d in devices()], key="qi_alat")
         dev = dev_by_name(alat)
         c1, c2 = st.columns(2)
-        tgl = c1.date_input("Tanggal *", value=TODAY(), max_value=TODAY(), key="qi_tgl")
+        tgl = c1.date_input("Tanggal backdate *", value=YESTERDAY(), max_value=YESTERDAY(), key="qi_tgl")
         petugas = c2.selectbox("Nama staff (inisial) *", cfg["staff"], key="qi_petugas")
         st.caption(" · ".join("{}: {}".format(a, b) for a, b in dev["info"][:4]) + "   |   " + dev["kode"])
         qc_checklist_ui(dev, tgl, petugas, "qi")
     with right:
-        st.markdown("<div class='box'><b>Panduan pengisian</b><br>Pengisian rutin lewat <b>scan QR code di ruangan</b> (menu Isi Ruangan).<br><br>1. Pilih peralatan dan tanggal.<br>"
+        st.markdown("<div class='box'><b>Panduan pengisian</b><br>Menu ini <b>hanya untuk backdate</b> (tanggal sebelum hari ini). Pengisian real-time lewat <b>scan QR code di ruangan</b>.<br><br>1. Pilih peralatan dan tanggal.<br>"
                     "2. Centang kegiatan yang sudah dikerjakan (atau <i>Centang semua</i>).<br>"
                     "3. <i>Periksa Suhu/Kelembaban ruangan</i> terisi otomatis dari data Suhu & Kelembaban. Alat <i>Mobile</i> tidak terhubung ke ruang tertentu, jadi dicentang manual.<br>"
                     "4. Catatan tampil di bawah formulir.<br>5. <i>Flat field Test (Mingguan)</i> tidak dihitung sebagai kegiatan harian di dashboard.</div>", unsafe_allow_html=True)
@@ -1475,6 +1579,18 @@ def page_input_qc():
             st.success("Data ID {} dihapus. Muat ulang halaman untuk memperbarui tabel.".format(did))
     else:
         st.caption("Belum ada checklist yang diinput untuk peralatan ini.")
+
+
+def page_backdate():
+    header()
+    if not is_author():
+        st.error("Halaman ini hanya untuk author.")
+        return
+    t1, t2 = st.tabs(["🌡️ Suhu & Kelembaban", "🛠️ QC Peralatan"])
+    with t1:
+        backdate_th()
+    with t2:
+        backdate_qc()
 
 
 def _preview(sh, base_px=1400, scale=0.6):
@@ -1567,9 +1683,8 @@ def download_qr_tab():
 # =====================================================================
 _pages = [(page_dashboard, "Dashboard", "📊", "dashboard", True),
           (page_ruang, "Isi Ruangan (QR)", "🔳", "ruang", False)]
-if is_author():   # input manual (koreksi / tanggal mundur / hapus data) hanya untuk author
-    _pages.append((page_input_th, "Input Suhu (manual)", "🌡️", "input-suhu", False))
-    _pages.append((page_input_qc, "Input QC (manual)", "🛠️", "input-qc", False))
+if is_author():   # backdate manual (tanggal sebelum hari ini) hanya untuk author
+    _pages.append((page_backdate, "Input Backdate (manual)", "🕘", "backdate", False))
 _pages.append((page_download, "Download & QR" if is_author() else "Download Formulir", "⬇️", "download", False))
 pg = st.navigation([st.Page(f, title="{}. {}".format(i + 1, t), icon=ic, url_path=u, default=d) for i, (f, t, ic, u, d) in enumerate(_pages)])
 
