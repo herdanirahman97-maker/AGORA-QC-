@@ -1119,9 +1119,14 @@ button[data-baseweb="tab"]:hover * { color:#1f2a7c !important; }
 button[data-baseweb="tab"][aria-selected="true"]{color:#d64545 !important;}
 button[data-baseweb="tab"][aria-selected="true"] * { color:#d64545 !important; }
 div[data-baseweb="tab-highlight"]{background:#d64545 !important;height:3px !important;border-radius:3px}
+
+/* PERBAIKAN WARNA EXPANDER (Author box agar terlihat) */
 [data-testid="stExpander"]{border:1px solid var(--line) !important;border-radius:16px !important;background:#fff;box-shadow:var(--shadow);transition:box-shadow .25s}
 [data-testid="stExpander"]:hover{box-shadow:var(--shadow-hi)}
-[data-testid="stExpander"] summary{font-weight:600}
+[data-testid="stExpander"] summary, 
+[data-testid="stExpander"] summary * { font-weight:600 !important; color: var(--navy) !important; }
+[data-testid="stExpander"] summary svg { fill: var(--navy) !important; }
+
 [data-testid="stDataFrame"]{border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--shadow)}
 [data-testid="stAlert"]{border-radius:14px}
 @media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
@@ -1639,7 +1644,7 @@ def page_download():
                  "Suhu (°C)": e["suhu"], "Kelembaban (%)": e["hum"], "Staff": e["petugas"], "Temuan": e["ket"]}
                 for (d, s), e in sorted(month_data(ruang, y, m).items())]
         c3.download_button("⬇️ Data (CSV)", pd.DataFrame(rows).to_csv(index=False).encode("utf-8-sig"), fname + ".csv", "text/csv", key="dl_csv")
-        st.caption("Format mengikuti {}: grafik titik suhu (16-27 °C) dan kelembaban (10-100 %), pita merah muda = batas normal, titik merah = di luar batas.".format(FORM_CODE_TH))
+        # st.caption("Format mengikuti {}: grafik titik suhu (16-27 °C) dan kelembaban (10-100 %), pita merah muda = batas normal, titik merah = di luar batas.".format(FORM_CODE_TH)) <-- DIHAPUS
     with t2:
         alat, m2, y2 = filter_bar("dq", [d["nama"] for d in devices()], "Peralatan")
         dev = dev_by_name(alat)
