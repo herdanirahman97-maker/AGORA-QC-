@@ -374,7 +374,7 @@ def analyze(ruang, y, m):
     data = month_data(ruang, y, m)
     n = calendar.monthrange(y, m)[1]
     slots, empty_by_day = {}, {}
-    high, low, hum_bad = [], [], []
+    high, low, hum_bad = [], []
     due = filled = filled_due = ok = hum_ok = 0
     for d in range(1, n + 1):
         for s in "PSM":
@@ -1114,41 +1114,38 @@ li[role="option"] { background-color: #ffffff !important; color: #1c2a6b !import
 li[role="option"]:hover, li[role="option"][aria-selected="true"] { background-color: #eef3ff !important; color: #1f2a7c !important; padding-left:18px; }
 li[role="option"][aria-selected="true"]{font-weight:700;}
 
-/* ---------- FIX TABS (BLUE LABEL WITH WHITE TEXT) ---------- */
-[data-testid="stTabs"] [data-baseweb="tab-list"] {
-    gap: 12px !important;
-    background: transparent !important;
-    border-bottom: none !important; /* Remove default underline */
-    padding-bottom: 10px;
+/* ---------- FIX TABS (DARK BLUE TEXT FOR ACTIVE TAB) ---------- */
+/* 1. Warna teks default untuk semua tab */
+[data-testid="stTabs"] button[data-baseweb="tab"] p {
+    color: #5f6b9a !important; 
+    font-weight: 500 !important;
+    font-size: 14px !important;
 }
-[data-testid="stTabs"] button[role="tab"] {
-    background-color: #1f2a7c !important; /* Blue background */
-    border-radius: 999px !important; /* Pill label */
-    padding: 8px 24px !important;
-    border: none !important;
-    transition: all 0.2s ease;
-    opacity: 1 !important; 
+
+/* 2. Warna teks untuk tab yang AKTIF (Dark Blue) */
+[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] p,
+[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] span {
+    color: #1f2a7c !important; /* Warna Dark Blue */
+    font-weight: 700 !important;
 }
-[data-testid="stTabs"] button[role="tab"] *, 
-[data-testid="stTabs"] button[role="tab"] p,
-[data-testid="stTabs"] button[role="tab"] div,
-[data-testid="stTabs"] button[role="tab"] span {
-    color: #ffffff !important; /* White text */
-    font-weight: 600 !important;
-    fill: #ffffff !important;
-    -webkit-text-fill-color: #ffffff !important;
+
+/* 3. Ubah garis bawah (underline) merah menjadi Dark Blue pada tab aktif */
+[data-testid="stTabs"] div[data-baseweb="tab-highlight"] {
+    background-color: #1f2a7c !important; /* Warna Dark Blue */
+    height: 3px !important;
+    border-radius: 3px 3px 0 0 !important;
+    display: block !important;
+    opacity: 1 !important;
 }
-[data-testid="stTabs"] button[role="tab"]:hover {
-    background-color: #2b5fd9 !important;
-    transform: translateY(-1px);
+
+/* Hapus garis bawah bawaan abu-abu jika ada */
+[data-testid="stTabs"] div[data-baseweb="tab-border"] {
+    display: none !important;
 }
-[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
-    background-color: #004e75 !important; /* Darker blue for active */
-    box-shadow: 0 4px 12px rgba(0,78,117,0.4);
-}
-[data-baseweb="tab-highlight"], 
-[data-baseweb="tab-border"] {
-    display: none !important; /* Force hide the red line */
+
+/* 4. Efek hover pada tab */
+[data-testid="stTabs"] button[data-baseweb="tab"]:hover p {
+    color: #2b5fd9 !important;
 }
 
 /* PERBAIKAN WARNA EXPANDER (Author box agar terlihat) */
@@ -1675,7 +1672,6 @@ def page_download():
                  "Suhu (°C)": e["suhu"], "Kelembaban (%)": e["hum"], "Staff": e["petugas"], "Temuan": e["ket"]}
                 for (d, s), e in sorted(month_data(ruang, y, m).items())]
         c3.download_button("⬇️ Data (CSV)", pd.DataFrame(rows).to_csv(index=False).encode("utf-8-sig"), fname + ".csv", "text/csv", key="dl_csv")
-        # st.caption("Format mengikuti {}: grafik titik suhu (16-27 °C) dan kelembaban (10-100 %), pita merah muda = batas normal, titik merah = di luar batas.".format(FORM_CODE_TH)) <-- DIHAPUS
     with t2:
         alat, m2, y2 = filter_bar("dq", [d["nama"] for d in devices()], "Peralatan")
         dev = dev_by_name(alat)
@@ -1702,8 +1698,6 @@ def page_download():
     if is_author():
         with tabs[2]:
             download_qr_tab()
-
-
 
 
 def download_qr_tab():
@@ -1777,6 +1771,5 @@ with st.sidebar:
                     except Exception as ex:
                         st.error("Gagal restore: {}".format(ex))
     author_box()
-    # st.caption("{} · RAD 2209.xx/00".format(FORM_CODE_TH))  <-- DIHAPUS SESUAI PERMINTAAN
 
 pg.run()
