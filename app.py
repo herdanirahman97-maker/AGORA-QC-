@@ -1114,16 +1114,18 @@ li[role="option"] { background-color: #ffffff !important; color: #1c2a6b !import
 li[role="option"]:hover, li[role="option"][aria-selected="true"] { background-color: #eef3ff !important; color: #1f2a7c !important; padding-left:18px; }
 li[role="option"][aria-selected="true"]{font-weight:700;}
 
-/* ---------- FIX TABS (SIDEBAR STYLE, NO RED) ---------- */
-/* 1. Hilangkan garis merah secara total dan paksa transparan */
-[data-baseweb="tab-highlight"], 
-[data-baseweb="tab-border"],
-[data-testid="stTabs"] [data-baseweb="tab-highlight"],
-[data-testid="stTabs"] [data-baseweb="tab-border"] {
+/* ---------- FIX TABS (TEXT BLUE, NO RED) ---------- */
+/* 1. Hilangkan garis merah secara total */
+div[data-baseweb="tab-highlight"], 
+div[data-baseweb="tab-border"],
+[data-testid="stTabs"] div[data-baseweb="tab-highlight"],
+[data-testid="stTabs"] div[data-baseweb="tab-border"],
+.stTabs [data-baseweb="tab-highlight"],
+.stTabs [data-baseweb="tab-border"] {
     display: none !important;
-    opacity: 0 !important;
+    visibility: hidden !important;
     height: 0px !important;
-    background: transparent !important;
+    background-color: transparent !important;
     border: none !important;
 }
 
@@ -1134,14 +1136,21 @@ div[data-baseweb="tab-list"] {
     border-bottom: none !important;
 }
 
-/* 3. Gaya dasar untuk tab (tidak aktif) */
+/* 3. Paksa warna teks menjadi biru untuk SEMUA tab (aktif & tidak aktif) */
 [data-testid="stTabs"] button[data-baseweb="tab"],
-button[data-baseweb="tab"] {
-    background-color: transparent !important;
-    border-radius: 12px !important;
-    padding: 8px 16px !important;
-    border: none !important;
-    transition: all 0.2s ease !important;
+[data-testid="stTabs"] button[data-baseweb="tab"] *,
+[data-testid="stTabs"] button[data-baseweb="tab"] p,
+[data-testid="stTabs"] button[data-baseweb="tab"] div,
+[data-testid="stTabs"] button[data-baseweb="tab"] span,
+button[data-baseweb="tab"],
+button[data-baseweb="tab"] *,
+button[data-baseweb="tab"] p,
+button[data-baseweb="tab"] div,
+button[data-baseweb="tab"] span {
+    color: #1f2a7c !important;
+    -webkit-text-fill-color: #1f2a7c !important;
+    font-weight: 500 !important;
+    fill: #1f2a7c !important;
 }
 
 /* 4. Gaya untuk Tab yang Sedang Aktif (Sama persis seperti Sidebar) */
@@ -1149,27 +1158,16 @@ button[data-baseweb="tab"] {
 button[data-baseweb="tab"][aria-selected="true"] {
     background: linear-gradient(90deg, #e6edff, #f5f8ff) !important; /* Latar belakang biru muda */
     box-shadow: inset 4px 0 0 #1f2a7c !important; /* Garis kiri biru tua */
+    border-radius: 12px !important;
 }
 
-/* 5. Warna teks untuk SEMUA tab (Biru Tua) */
-[data-testid="stTabs"] button[data-baseweb="tab"] *,
-[data-testid="stTabs"] button[data-baseweb="tab"] p,
-[data-testid="stTabs"] button[data-baseweb="tab"] span,
-button[data-baseweb="tab"] *,
-button[data-baseweb="tab"] p,
-button[data-baseweb="tab"] span {
-    color: #1f2a7c !important;
-    -webkit-text-fill-color: #1f2a7c !important;
-    font-weight: 500 !important;
-}
-
-/* 6. Teks Tab Aktif dibuat lebih tebal */
+/* 5. Teks Tab Aktif dibuat lebih tebal */
 [data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] *,
 button[data-baseweb="tab"][aria-selected="true"] * {
     font-weight: 700 !important;
 }
 
-/* 7. Efek Hover */
+/* 6. Efek Hover */
 [data-testid="stTabs"] button[data-baseweb="tab"]:hover,
 button[data-baseweb="tab"]:hover {
     background-color: #eef3ff !important; 
