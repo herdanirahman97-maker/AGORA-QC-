@@ -516,7 +516,7 @@ def qc_analyze(dev, y, m):
 # =====================================================================
 # 5. GAMBAR FORMULIR (vektor: dipakai untuk preview SVG & PDF)
 # =====================================================================
-BAND, TEAL, NAVY, RED, BLACK = "#cfe2f3", "#1b7895", "#004e75", "#ff0000", "#000000"
+BAND, TEAL, NAVY, RED, BLACK = "#cfe2f3", "#1b7895", "#004e75", "#1f2a7c", "#000000"
 PINK = "#f4cccc"   # pita "didalam batas normal"
 GRAYL = "#efefef"
 
@@ -994,7 +994,7 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&display=swap');
 
 :root{
-    --navy:#1f2a7c;--blue:#2b5fd9;--ink:#1c2a6b;--muted:#5f6b9a;--line:#e3e9f6;--soft:#f5f8ff;--ok:#2e9e5b;--bad:#d64545;--warn:#f0a81c;
+    --navy:#1f2a7c;--blue:#2b5fd9;--ink:#1c2a6b;--muted:#5f6b9a;--line:#e3e9f6;--soft:#f5f8ff;--ok:#2e9e5b;--bad:#1f2a7c;--warn:#f0a81c;
     --shadow:0 6px 22px rgba(31,42,124,.10);--shadow-hi:0 14px 34px rgba(31,42,124,.20);
     --primary-color: #1f2a7c !important; /* Paksa Streamlit primary color ke biru */
     --primary: #1f2a7c !important;       /* Antisipasi variabel lain */
@@ -1060,7 +1060,7 @@ transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s;animation:fad
 .cal th{background:#eaf0ff;color:#1f2a7c;font-weight:600}
 .cal td.l{text-align:left;font-weight:700;background:#f5f8ff;color:#1f2a7c;padding:0 10px;min-width:96px;white-space:nowrap;border-radius:8px}
 .cal td:not(.l):hover{transform:scale(1.35);box-shadow:0 6px 14px rgba(31,42,124,.28);position:relative;z-index:2}
-.s-ok{background:#2e9e5b;color:#fff}.s-high{background:#d64545;color:#fff;font-weight:700}.s-low{background:#f0a81c;color:#2b2000;font-weight:700}
+.s-ok{background:#2e9e5b;color:#fff}.s-high{background:#1f2a7c;color:#fff;font-weight:700}.s-low{background:#f0a81c;color:#2b2000;font-weight:700}
 .s-empty{background:#9aa5b1;color:#fff}.s-future{background:#eef1f8;color:#bbb}
 .lg2{display:flex;gap:16px;font-size:12px;margin:10px 0;flex-wrap:wrap;color:#1c2a6b}.lg2 i{display:inline-block;width:14px;height:14px;border-radius:4px;margin-right:6px;vertical-align:-3px}
 
@@ -1068,9 +1068,9 @@ transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s;animation:fad
 .box{background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px 18px;box-shadow:var(--shadow);margin-bottom:12px;font-size:13px;line-height:1.75;color:#1c2a6b;
 transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s;animation:fadeUp .5s ease both}
 .box:hover{transform:translateY(-3px);box-shadow:var(--shadow-hi)}
-.alert{background:#fff4f4;border:1px solid #f5c6c6;border-left:6px solid #d64545;border-radius:14px;padding:12px 18px;margin:4px 0 14px;font-size:13px;line-height:1.75;color:#7a1f1f;
+.alert{background:#fff4f4;border:1px solid #f5c6c6;border-left:6px solid #1f2a7c;border-radius:14px;padding:12px 18px;margin:4px 0 14px;font-size:13px;line-height:1.75;color:#7a1f1f;
 animation:fadeUp .5s ease both,pulseRing 2.4s ease-out infinite}
-.hint{font-size:12px;margin:-8px 0 8px 2px}.hint.ok{color:#2e9e5b}.hint.bad{color:#d64545}
+.hint{font-size:12px;margin:-8px 0 8px 2px}.hint.ok{color:#2e9e5b}.hint.bad{color:#1f2a7c}
 .empty{text-align:center;padding:46px 20px;background:#f5f8ff;border:1.5px dashed #c9d6f5;border-radius:22px;color:#1f2a7c;animation:fadeUp .5s ease both}
 .empty .ic{font-size:56px;display:inline-block;animation:floaty 3.2s ease-in-out infinite}
 .empty .h{font-size:20px;font-weight:700;margin:8px 0 4px}.empty .p{font-size:13px;color:#5f6b9a}
@@ -1291,7 +1291,7 @@ def dash_th():
       <div class='kc'><div class='t'>Persentase pengisian</div><div class='v'><span class='cnt' style='--n:{pf:.0f}' data-s='%'></span></div><div class='s'>{fd} data terisi dari {d} slot jatuh tempo</div></div>
       <div class='kc' style='border-top-color:#2e9e5b'><div class='t'>Suhu dalam batas ({lo:g}&ndash;{hi:g} &deg;C)</div><div class='v' style='color:#2e9e5b'><span class='cnt' style='--n:{po:.0f}' data-s='%'></span></div><div class='s'>{o} dari {f} data terisi</div></div>
       <div class='kc' style='border-top-color:#2e9e5b'><div class='t'>Kelembaban dalam batas ({hl:g}&ndash;{hh:g} %)</div><div class='v' style='color:#2e9e5b'><span class='cnt' style='--n:{ph:.0f}' data-s='%'></span></div><div class='s'>{ho} dari {f} data terisi</div></div>
-      <div class='kc' style='border-top-color:#d64545'><div class='t'>Suhu DI ATAS batas</div><div class='v' style='color:#d64545'><span class='cnt' style='--n:{hi_n}' data-s=''></span></div><div class='s'>slot pengukuran</div></div>
+      <div class='kc' style='border-top-color:#1f2a7c'><div class='t'>Suhu DI ATAS batas</div><div class='v' style='color:#1f2a7c'><span class='cnt' style='--n:{hi_n}' data-s=''></span></div><div class='s'>slot pengukuran</div></div>
       <div class='kc' style='border-top-color:#f0a81c'><div class='t'>Suhu di bawah batas</div><div class='v' style='color:#d98e00'><span class='cnt' style='--n:{lo_n}' data-s=''></span></div><div class='s'>slot pengukuran</div></div>
       <div class='kc' style='border-top-color:#9aa5b1'><div class='t'>Slot kosong / belum diisi</div><div class='v' style='color:#667'><span class='cnt' style='--n:{e}' data-s=''></span></div><div class='s'>{fe} tanggal kosong total</div></div>
     </div>""".format(pf=an["pct_fill"], f=an["filled"], fd=an["filled_due"], d=an["due"], lo=std["t_lo"], hi=std["t_hi"], po=an["pct_ok"], o=an["ok"],
@@ -1535,7 +1535,7 @@ def qc_checklist_ui(dev, tgl, petugas, p):
         else:
             ok = auto[auto_kind(it)]
             st.markdown("{} {} - <span style='font-size:12px;color:{}'>{}</span>".format(
-                "✅" if ok else "⬜", escape(it), "#2e9e5b" if ok else "#d64545",
+                "✅" if ok else "⬜", escape(it), "#2e9e5b" if ok else "#1f2a7c",
                 "terisi otomatis dari data Suhu & Kelembaban ({})".format(escape(dev["ruang"])) if ok else "isi dulu Suhu & Kelembaban ruangan ini"),
                 unsafe_allow_html=True)
     st.text_area("Catatan / temuan (opsional)", value=existing["catatan"] if existing else "", key=pk + "_cat")
