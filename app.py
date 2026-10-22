@@ -1334,15 +1334,6 @@ def dash_th():
         st.dataframe(pd.DataFrame([dict(Tanggal=d, Shift=SHIFT_NAME[s], **{"Kelembaban (%)": v, "Keterangan": "Di atas" if k == "high" else "Di bawah"}) for d, s, v, k in an["hum_bad"]]
                                   or [dict(Tanggal="-", Shift="-", **{"Kelembaban (%)": "-", "Keterangan": "-"})]), hide_index=True)
 
-    st.markdown("**Rekap semua ruangan - {} {}**".format(BLN[m - 1], y))
-    rows = []
-    for rn in room_names():
-        a = analyze(rn, y, m)
-        rows.append({"Ruangan": rn, "% Pengisian": round(a["pct_fill"]), "% Suhu dalam batas": round(a["pct_ok"]), "% Kelembaban dalam batas": round(a["pct_hum"]),
-                     "Suhu di atas batas": len(a["high"]), "Suhu di bawah batas": len(a["low"]), "Tanggal yang kosong": a["n_empty"],
-                     "Tanggal yang belum diisi": days_text(a["full_empty"])})
-    st.dataframe(pd.DataFrame(rows), hide_index=True)
-
 
 def dash_qc():
     st.caption("Rangkuman checklist kegiatan pemeliharaan harian peralatan radiologi")
