@@ -1343,7 +1343,7 @@ def dash_th():
         a = analyze(rn, y, m)
         rows.append({"Ruangan": rn, "% Pengisian": round(a["pct_fill"]), "% Suhu dalam batas": round(a["pct_ok"]), "% Kelembaban dalam batas": round(a["pct_hum"]),
                      "Suhu di atas batas": len(a["high"]), "Suhu di bawah batas": len(a["low"]), "Slot kosong": a["n_empty"],
-                     "Tanggal kosong total": days_text(a["full_empty"])})
+                     "Tanggal yang belum diisi": days_text(a["full_empty"])})
     st.dataframe(pd.DataFrame(rows), hide_index=True)
 
 
