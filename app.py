@@ -121,6 +121,16 @@ _DEVICES = [
                 "Periksa pergerakan cycling pada stand tabung", "Periksa lampu kolimator", _BERSIH, "Flat field Test (Mingguan)"]),
 ]
 
+# Nama lengkap staff untuk pesan "Sudah diisi oleh ...". Inisial yang belum ada di sini akan ditampilkan apa adanya.
+# Contoh pengisian:  "NR": "Nama Lengkap",
+STAFF_NAMES = {"RF": "Rifqi"}
+
+
+def staff_label(ini):
+    ini = (ini or "").strip()
+    return STAFF_NAMES.get(ini, ini) or "-"
+
+
 DEFAULT_CFG = {
     "rooms": [dict(nama=n, tekanan=False, t_lo=20.0, t_hi=24.0, h_lo=float(hl), h_hi=float(hh)) for n, hl, hh in _ROOMS],
     "staff": ["RF", "NR", "AC", "AP", "AM"],
@@ -1274,7 +1284,7 @@ def dash_th():
       <div class='kc' style='border-top-color:#2e9e5b'><div class='t'>Kelembaban dalam batas ({hl:g}&ndash;{hh:g} %)</div><div class='v' style='color:#2e9e5b'><span class='cnt' style='--n:{ph:.0f}' data-s='%'></span></div><div class='s'>{ho} dari {f} data terisi</div></div>
       <div class='kc' style='border-top-color:#d64545'><div class='t'>Suhu DI ATAS batas</div><div class='v' style='color:#d64545'><span class='cnt' style='--n:{hi_n}' data-s=''></span></div><div class='s'>slot pengukuran</div></div>
       <div class='kc' style='border-top-color:#f0a81c'><div class='t'>Suhu di bawah batas</div><div class='v' style='color:#d98e00'><span class='cnt' style='--n:{lo_n}' data-s=''></span></div><div class='s'>slot pengukuran</div></div>
-      <div class='kc' style='border-top-color:#9aa5b1'><div class='t'>Slot kosong / belum diisi</div><div class='v' style='color:#667'><span class='cnt' style='--n:{e}' data-s=''></span></div><div class='s'>{fe} tanggal kosong total</div></div>
+      <div class='kc' style='border-top-color:#9aa5b1'><div class='t'>Jumlah tanggal yang belum diisi</div><div class='v' style='color:#667'><span class='cnt' style='--n:{e}' data-s=''></span></div><div class='s'>{fe} tanggal yang belum diisi</div></div>
     </div>""".format(pf=an["pct_fill"], f=an["filled"], fd=an["filled_due"], d=an["due"], lo=std["t_lo"], hi=std["t_hi"], po=an["pct_ok"], o=an["ok"],
                      hl=std["h_lo"], hh=std["h_hi"], ph=an["pct_hum"], ho=an["hum_ok"],
                      hi_n=len(an["high"]), lo_n=len(an["low"]), e=an["n_empty"], fe=len(an["full_empty"])), unsafe_allow_html=True)
@@ -1282,28 +1292,28 @@ def dash_th():
     head = "<tr><th></th>" + "".join("<th>{}</th>".format(d) for d in range(1, an["n"] + 1)) + "</tr>"
     body = ""
     for s in "PSM":
-        body += "<tr><td class='l'>{} ({:02d}.00)</td>".format(SHIFT_NAME[s], SHIFT_HOUR[s])
+        body += "<tr><td class='l'>Shift {}</td>".format(SHIFT_NAME[s])
         for d in range(1, an["n"] + 1):
             c = an["slots"][(d, s)]
             stt = c["state"]
             tip = {"ok": "{:g}°C normal", "high": "{:g}°C DI ATAS batas", "low": "{:g}°C di bawah batas"}.get(stt, "")
-            tip = "Tgl {} {}: ".format(d, SHIFT_NAME[s]) + (tip.format(c["t"]) if tip else ("KOSONG" if stt == "empty" else "belum jatuh tempo"))
+            tip = "" if stt == "future" else "Tgl {} {}: ".format(d, SHIFT_NAME[s]) + (tip.format(c["t"]) if tip else "BELUM DIISI")
             txt = {"ok": "&#10003;", "high": "&#9650;", "low": "&#9660;", "empty": "&ndash;", "future": ""}[stt]
             body += "<td class='s-{}' title='{}'>{}</td>".format(stt, tip, txt)
         body += "</tr>"
     st.markdown("<div style='overflow-x:auto'><table class='cal'>{}{}</table></div>".format(head, body), unsafe_allow_html=True)
     st.markdown("<div class='lg2'><span><i class='s-ok'></i>Dalam batas</span><span><i class='s-high'></i>&#9650; Di atas batas</span><span><i class='s-low'></i>&#9660; Di bawah batas</span>"
-                "<span><i class='s-empty'></i>Kosong (belum diisi)</span><span><i class='s-future'></i>Belum jatuh tempo</span></div>", unsafe_allow_html=True)
+                "<span><i class='s-empty'></i>Belum diisi</span></div>", unsafe_allow_html=True)
 
     hi_days = sorted(set(d for d, _, _ in an["high"]))
     lo_days = sorted(set(d for d, _, _ in an["low"]))
-    emp_days = sorted(an["empty_by_day"].keys())
+    belum = ["{} tanggal {}".format(SHIFT_NAME[s], d) for d in sorted(an["empty_by_day"]) for s in "PSM" if s in an["empty_by_day"][d]]
     st.markdown("<div class='box'><b>Ringkasan {} - {} {}</b><br>"
                 "&#128308; Tanggal dengan suhu <b>di atas batas</b> ({:g} &deg;C): <b>{}</b><br>"
                 "&#128992; Tanggal dengan suhu di bawah batas ({:g} &deg;C): <b>{}</b><br>"
-                "&#9899; Tanggal yang ada <b>slot kosong</b>: <b>{}</b><br>"
-                "&#9898; Tanggal <b>kosong total</b> (Pagi, Siang, Malam belum diisi): <b>{}</b></div>".format(
-                    escape(ruang), BLN[m - 1], y, std["t_hi"], days_text(hi_days), std["t_lo"], days_text(lo_days), days_text(emp_days), days_text(an["full_empty"])),
+                "&#9898; Tanggal yang belum diisi: <b>{}</b></div>".format(
+                    escape(ruang), BLN[m - 1], y, std["t_hi"], days_text(hi_days), std["t_lo"], days_text(lo_days),
+                    ", ".join(belum) if belum else "-"),
                 unsafe_allow_html=True)
 
     data = month_data(ruang, y, m)
@@ -1329,9 +1339,9 @@ def dash_th():
             st.markdown("**Suhu di bawah batas**")
             st.dataframe(pd.DataFrame([dict(Tanggal=d, Shift=SHIFT_NAME[s], **{"Suhu (°C)": v, "Batas bawah": std["t_lo"], "Selisih": round(v - std["t_lo"], 1)}) for d, s, v in an["low"]]), hide_index=True)
     with c2:
-        st.markdown("**Tanggal & shift kosong**")
-        st.dataframe(pd.DataFrame([dict(Tanggal=d, **{"Shift kosong": ", ".join(SHIFT_NAME[x] for x in v), "Status": "Kosong total" if len(v) == 3 else "Sebagian"}) for d, v in sorted(an["empty_by_day"].items())]
-                                  or [dict(Tanggal="-", **{"Shift kosong": "Semua terisi", "Status": "-"})]), hide_index=True)
+        st.markdown("**Riwayat pengisian**")
+        st.dataframe(pd.DataFrame([dict(Tanggal=d, **{"Shift belum diisi": ", ".join(SHIFT_NAME[x] for x in v), "Status": "Belum diisi" if len(v) == 3 else "Sebagian"}) for d, v in sorted(an["empty_by_day"].items())]
+                                  or [dict(Tanggal="-", **{"Shift belum diisi": "Semua terisi", "Status": "-"})]), hide_index=True)
     with c3:
         st.markdown("**Kelembaban di luar batas ({:g}–{:g} %)**".format(std["h_lo"], std["h_hi"]))
         st.dataframe(pd.DataFrame([dict(Tanggal=d, Shift=SHIFT_NAME[s], **{"Kelembaban (%)": v, "Keterangan": "Di atas" if k == "high" else "Di bawah"}) for d, s, v, k in an["hum_bad"]]
@@ -1342,7 +1352,7 @@ def dash_th():
     for rn in room_names():
         a = analyze(rn, y, m)
         rows.append({"Ruangan": rn, "% Pengisian": round(a["pct_fill"]), "% Suhu dalam batas": round(a["pct_ok"]), "% Kelembaban dalam batas": round(a["pct_hum"]),
-                     "Suhu di atas batas": len(a["high"]), "Suhu di bawah batas": len(a["low"]), "Slot kosong": a["n_empty"],
+                     "Suhu di atas batas": len(a["high"]), "Suhu di bawah batas": len(a["low"]), "Tanggal yang kosong": a["n_empty"],
                      "Tanggal yang belum diisi": days_text(a["full_empty"])})
     st.dataframe(pd.DataFrame(rows), hide_index=True)
 
@@ -1364,8 +1374,8 @@ def dash_qc():
     <div class='kp'>
       <div class='kc'><div class='t'>Hari checklist lengkap</div><div class='v'><span class='cnt' style='--n:{pf:.0f}' data-s='%'></span></div><div class='s'>{full} dari {cnt} hari-alat jatuh tempo</div></div>
       <div class='kc' style='border-top-color:#2e9e5b'><div class='t'>Kegiatan terselesaikan</div><div class='v' style='color:#2e9e5b'><span class='cnt' style='--n:{pi:.0f}' data-s='%'></span></div><div class='s'>{idn} dari {itot} kegiatan harian</div></div>
-      <div class='kc' style='border-top-color:#f0a81c'><div class='t'>Hari terisi sebagian</div><div class='v' style='color:#d98e00'><span class='cnt' style='--n:{part}' data-s=''></span></div><div class='s'>hari-alat belum lengkap</div></div>
-      <div class='kc' style='border-top-color:#9aa5b1'><div class='t'>Hari kosong</div><div class='v' style='color:#667'><span class='cnt' style='--n:{emp}' data-s=''></span></div><div class='s'>hari-alat belum diisi</div></div>
+      <div class='kc' style='border-top-color:#f0a81c'><div class='t'>Hanya sebagian</div><div class='v' style='color:#d98e00'><span class='cnt' style='--n:{part}' data-s=''></span></div><div class='s'>hari-alat belum lengkap</div></div>
+      <div class='kc' style='border-top-color:#9aa5b1'><div class='t'>Hari belum diisi</div><div class='v' style='color:#667'><span class='cnt' style='--n:{emp}' data-s=''></span></div><div class='s'>hari-alat belum diisi</div></div>
     </div>""".format(pf=(tot_full / tot_counted * 100 if tot_counted else 0), full=tot_full, cnt=tot_counted,
                      pi=(tot_idone / tot_itotal * 100 if tot_itotal else 0), idn=tot_idone, itot=tot_itotal, part=tot_part, emp=tot_empty),
                 unsafe_allow_html=True)
@@ -1380,22 +1390,17 @@ def dash_qc():
         body += "<tr><td class='l'>{}</td>".format(escape(dev["nama"]))
         for d in range(1, n + 1):
             c = a["days"][d]
-            tip = "{} tgl {}: {}/{} kegiatan".format(escape(dev["nama"]), d, c["done"], c["total"]) if c["state"] != "future" else "belum jatuh tempo"
+            tip = "{} tgl {}: {}/{} kegiatan".format(escape(dev["nama"]), d, c["done"], c["total"]) if c["state"] != "future" else ""
             body += "<td class='s-{}' title='{}'>{}</td>".format(cls[c["state"]], tip, txt[c["state"]])
         body += "</tr>"
     st.markdown("<div style='overflow-x:auto'><table class='cal'>{}{}</table></div>".format(head, body), unsafe_allow_html=True)
     st.markdown("<div class='lg2'><span><i class='s-ok'></i>&#10003; Lengkap</span><span><i class='s-low'></i>&#189; Sebagian</span>"
-                "<span><i class='s-empty'></i>Kosong (belum diisi)</span><span><i class='s-future'></i>Belum jatuh tempo</span></div>", unsafe_allow_html=True)
+                "<span><i class='s-empty'></i>Belum diisi</span></div>", unsafe_allow_html=True)
 
     st.markdown("**Rekap semua peralatan - {} {}**".format(BLN[m - 1], y))
     st.dataframe(pd.DataFrame([{"Peralatan": d["nama"], "Hari lengkap": ans[d["nama"]]["full"], "Hari jatuh tempo": ans[d["nama"]]["counted"],
                                 "% Hari lengkap": round(ans[d["nama"]]["pct_full"]), "% Kegiatan selesai": round(ans[d["nama"]]["pct_item"]),
-                                "Hari sebagian": ans[d["nama"]]["n_part"], "Hari kosong": ans[d["nama"]]["n_empty"]} for d in devs]), hide_index=True)
-
-    pilih = st.selectbox("Detail kegiatan yang belum dikerjakan - pilih peralatan", [d["nama"] for d in devs], key="qd_detail")
-    a = ans[pilih]
-    rows = [{"Tanggal": d, "Status": "Kosong" if s == "empty" else "Sebagian", "Kegiatan belum dikerjakan": "; ".join(ms) if s == "part" else "Semua kegiatan"} for d, s, ms in a["missing"]]
-    st.dataframe(pd.DataFrame(rows or [{"Tanggal": "-", "Status": "-", "Kegiatan belum dikerjakan": "Semua terisi lengkap"}]), hide_index=True)
+                                "Hanya sebagian": ans[d["nama"]]["n_part"], "Hari belum diisi": ans[d["nama"]]["n_empty"]} for d in devs]), hide_index=True)
 
 
 def page_dashboard():
@@ -1463,10 +1468,12 @@ def th_entry_form(ruang, tgl, shift_key, petugas, p):
         st.text_area("Temuan ketidaksesuaian * (wajib karena di luar batas standar)", key=p + "_temuan")
         st.selectbox("Tindakan korektif *", ["Lapor Teknisi AC / Maintenance", "Pengaturan AC / Dehumidifier", "Lainnya"], key=p + "_tindakan")
     ada = load_entries()
-    dup = len(ada[(ada["ruang"] == ruang) & (ada["tanggal"] == tgl.isoformat()) & (ada["shift"] == shift_key)]) > 0
+    same = ada[(ada["ruang"] == ruang) & (ada["tanggal"] == tgl.isoformat()) & (ada["shift"] == shift_key)]
+    dup = len(same) > 0
     timpa = True
     if dup:
-        st.warning("Data {} - {} - {} sudah ada.".format(ruang, tgl.strftime("%d/%m/%Y"), SHIFT_NAME[shift_key]))
+        st.warning("Pengisian Suhu Ruangan {} pada tanggal {} Sudah diisi oleh {}".format(
+            ruang, tgl.strftime("%d/%m/%Y"), staff_label(same.iloc[-1]["petugas"])))
         timpa = st.checkbox("Timpa data yang sudah ada", key=p + "_timpa")
     st.button("Simpan suhu & kelembaban", type="primary", key=p + "_save", disabled=(dup and not timpa),
               on_click=_save_th, args=(p, ruang, tgl, shift_key, petugas))
@@ -1543,7 +1550,7 @@ def page_ruang():
         ruang = locked
     else:
         st.markdown("<div class='empty'><div class='ic'>🔳</div><div class='h'>Scan QR code di ruangan</div>"
-                    "<div class='p'>Arahkan kamera HP ke QR code yang ditempel di ruangan untuk membuka formulir pengisian ruangan tersebut.</div></div>", unsafe_allow_html=True)
+                    "<div class='p'>Scan QR code pada setiap ruangan yang tersedia</div></div>", unsafe_allow_html=True)
         return
     n = now()
     tgl = n.date()
@@ -1664,7 +1671,6 @@ def _preview(sh, base_px=1400, scale=0.85):
 
 def page_download():
     header()
-    st.caption("Download formulir resmi (PDF A4 landscape) dan data (CSV)")
     names = ["🌡️ Form Suhu & Kelembaban", "🛠️ Form Checklist QC Peralatan"]
     if is_author():   # generator QR hanya untuk author
         names.append("🔳 QR Code Ruangan")
@@ -1707,7 +1713,7 @@ def page_download():
             e = qd[d]
             rows2.append({"Alat": alat, "Tanggal": dt.date(y2, m2, d).isoformat(), "Staff": e["petugas"],
                           "Kegiatan selesai": len([i for i in dev["items"] if i in e["done"]]), "Total kegiatan": len(dev["items"]),
-                          "Belum dikerjakan": "; ".join(i for i in dev["items"] if i not in e["done"] and is_daily(i)), "Catatan": e["catatan"]})
+                          "QC yang belum dikerjakan": "; ".join(i for i in dev["items"] if i not in e["done"] and is_daily(i)), "Catatan": e["catatan"]})
         q3.download_button("⬇️ Data (CSV)", pd.DataFrame(rows2).to_csv(index=False).encode("utf-8-sig"), fname2 + ".csv", "text/csv", key="dq_csv")
         st.caption("Format mengikuti {} - centang = kegiatan selesai. Kegiatan suhu & kelembaban terisi otomatis dari data ruang terkait.".format(dev["kode"]))
     if is_author():
