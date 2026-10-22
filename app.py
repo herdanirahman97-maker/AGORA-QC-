@@ -22,6 +22,14 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
+# Cadangan tema: pastikan warna utama biru tua (bukan merah bawaan Streamlit) walau .streamlit/config.toml belum terbaca.
+try:
+    for _k, _v in {"base": "light", "primaryColor": "#1f2a7c", "backgroundColor": "#ffffff",
+                   "secondaryBackgroundColor": "#f5f8ff", "textColor": "#1c2a6b"}.items():
+        st._config.set_option("theme." + _k, _v)
+except Exception:
+    pass
+
 st.set_page_config(
     page_title="Digital Monitoring QC Harian Radiologi SHAG {}".format(2026),
     page_icon="🏥",
@@ -516,7 +524,7 @@ def qc_analyze(dev, y, m):
 # =====================================================================
 # 5. GAMBAR FORMULIR (vektor: dipakai untuk preview SVG & PDF)
 # =====================================================================
-BAND, TEAL, NAVY, RED, BLACK = "#cfe2f3", "#1b7895", "#004e75", "#1f2a7c", "#000000"
+BAND, TEAL, NAVY, RED, BLACK = "#cfe2f3", "#1b7895", "#004e75", "#ff0000", "#000000"
 PINK = "#f4cccc"   # pita "didalam batas normal"
 GRAYL = "#efefef"
 
@@ -920,10 +928,8 @@ def sheets_to_pdf(sheets, title="Formulir Radiologi - Siloam Hospitals Agora", p
     fn_bold = "Lexend-Bold" if bold_ok else "Helvetica-Bold"
     buf = io.BytesIO()
     pw, ph = A4 if portrait else landscape(A4)
-    
-    # --- UKURAN MARGIN DIPERKECIL DARI 22.0 MENJADI 10.0 AGAR PDF LEBIH BESAR & JELAS ---
+    # margin diperkecil dari 22.0 menjadi 10.0 agar PDF lebih besar & jelas
     MG = 10.0
-    
     c = Canvas(buf, pagesize=(pw, ph))
     c.setTitle(title)
     c.setAuthor("Siloam Hospitals Agora - Instalasi Radiologi")
@@ -993,12 +999,10 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800&display=swap');
 
-:root{
-    --navy:#1f2a7c;--blue:#2b5fd9;--ink:#1c2a6b;--muted:#5f6b9a;--line:#e3e9f6;--soft:#f5f8ff;--ok:#2e9e5b;--bad:#1f2a7c;--warn:#f0a81c;
-    --shadow:0 6px 22px rgba(31,42,124,.10);--shadow-hi:0 14px 34px rgba(31,42,124,.20);
-    --primary-color: #1f2a7c !important; /* Paksa Streamlit primary color ke biru */
-    --primary: #1f2a7c !important;       /* Antisipasi variabel lain */
-}
+:root{--navy:#1f2a7c;--blue:#2b5fd9;--ink:#1c2a6b;--muted:#5f6b9a;--line:#e3e9f6;--soft:#f5f8ff;--ok:#2e9e5b;--bad:#d64545;--warn:#f0a81c;
+--shadow:0 6px 22px rgba(31,42,124,.10);--shadow-hi:0 14px 34px rgba(31,42,124,.20);
+    --primary-color:#1f2a7c !important;--primary:#1f2a7c !important}
+html{accent-color:#1f2a7c}
 :root, html, body { color-scheme: light !important; }
 html{scroll-behavior:smooth}
 html, body, [class*="css"], .stApp, .stMarkdown, .stButton, .stTextInput,
@@ -1035,7 +1039,7 @@ html, body, [class*="css"], .stApp, .stMarkdown, .stButton, .stTextInput,
 .hero::before{content:'';position:absolute;left:0;right:0;top:0;height:5px;background:linear-gradient(90deg,#1f2a7c,#2b5fd9,#27b5c9,#ffb81c,#2b5fd9,#1f2a7c);background-size:300% 100%;animation:shimmer 6s linear infinite}
 .hero .blob{position:absolute;border-radius:50%;filter:blur(38px);opacity:.35;pointer-events:none}
 .hero .b1{width:220px;height:220px;background:#9db8ff;left:-60px;top:-80px;animation:blob 9s ease-in-out infinite}
-.hero .b2{width:200px;height:200px;background:#25D366;right:-50px;bottom:-90px;animation:blob 11s ease-in-out infinite reverse} /* WHATSAPP GREEN COLOUR */
+.hero .b2{width:200px;height:200px;background:#25D366;right:-50px;bottom:-90px;animation:blob 11s ease-in-out infinite reverse}
 .hero > *:not(.blob){position:relative;z-index:1}
 .hero img{height:56px;margin-bottom:14px;animation:floaty 4s ease-in-out infinite}
 .hero .ttl{font-size:clamp(20px,2.9vw,34px);font-weight:800;color:#1f2a7c;line-height:1.25;letter-spacing:.2px;margin:0 auto 10px;max-width:980px}
@@ -1060,7 +1064,7 @@ transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s;animation:fad
 .cal th{background:#eaf0ff;color:#1f2a7c;font-weight:600}
 .cal td.l{text-align:left;font-weight:700;background:#f5f8ff;color:#1f2a7c;padding:0 10px;min-width:96px;white-space:nowrap;border-radius:8px}
 .cal td:not(.l):hover{transform:scale(1.35);box-shadow:0 6px 14px rgba(31,42,124,.28);position:relative;z-index:2}
-.s-ok{background:#2e9e5b;color:#fff}.s-high{background:#1f2a7c;color:#fff;font-weight:700}.s-low{background:#f0a81c;color:#2b2000;font-weight:700}
+.s-ok{background:#2e9e5b;color:#fff}.s-high{background:#d64545;color:#fff;font-weight:700}.s-low{background:#f0a81c;color:#2b2000;font-weight:700}
 .s-empty{background:#9aa5b1;color:#fff}.s-future{background:#eef1f8;color:#bbb}
 .lg2{display:flex;gap:16px;font-size:12px;margin:10px 0;flex-wrap:wrap;color:#1c2a6b}.lg2 i{display:inline-block;width:14px;height:14px;border-radius:4px;margin-right:6px;vertical-align:-3px}
 
@@ -1068,9 +1072,9 @@ transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s;animation:fad
 .box{background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px 18px;box-shadow:var(--shadow);margin-bottom:12px;font-size:13px;line-height:1.75;color:#1c2a6b;
 transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s;animation:fadeUp .5s ease both}
 .box:hover{transform:translateY(-3px);box-shadow:var(--shadow-hi)}
-.alert{background:#fff4f4;border:1px solid #f5c6c6;border-left:6px solid #1f2a7c;border-radius:14px;padding:12px 18px;margin:4px 0 14px;font-size:13px;line-height:1.75;color:#7a1f1f;
+.alert{background:#fff4f4;border:1px solid #f5c6c6;border-left:6px solid #d64545;border-radius:14px;padding:12px 18px;margin:4px 0 14px;font-size:13px;line-height:1.75;color:#7a1f1f;
 animation:fadeUp .5s ease both,pulseRing 2.4s ease-out infinite}
-.hint{font-size:12px;margin:-8px 0 8px 2px}.hint.ok{color:#2e9e5b}.hint.bad{color:#1f2a7c}
+.hint{font-size:12px;margin:-8px 0 8px 2px}.hint.ok{color:#2e9e5b}.hint.bad{color:#d64545}
 .empty{text-align:center;padding:46px 20px;background:#f5f8ff;border:1.5px dashed #c9d6f5;border-radius:22px;color:#1f2a7c;animation:fadeUp .5s ease both}
 .empty .ic{font-size:56px;display:inline-block;animation:floaty 3.2s ease-in-out infinite}
 .empty .h{font-size:20px;font-weight:700;margin:8px 0 4px}.empty .p{font-size:13px;color:#5f6b9a}
@@ -1098,15 +1102,15 @@ transition:transform .2s,box-shadow .2s,border-color .2s,color .2s;box-shadow:0 
 
 /* ---------- FIX DROPDOWN & TEXT INPUT (LIGHT THEME) ---------- */
 div[data-baseweb="input"], div[data-baseweb="textarea"], div[data-baseweb="select"] > div {
-    border-radius: 12px !important; 
-    background-color: #ffffff !important; 
+    border-radius: 12px !important;
+    background-color: #ffffff !important;
     border: 1.5px solid var(--line) !important;
     transition: border-color .18s, box-shadow .18s;
 }
-div[data-baseweb="input"] input, 
-div[data-baseweb="select"] input, 
+div[data-baseweb="input"] input,
+div[data-baseweb="select"] input,
 div[data-baseweb="select"] > div {
-    color: #1c2a6b !important; 
+    color: #1c2a6b !important;
     -webkit-text-fill-color: #1c2a6b !important;
 }
 div[data-baseweb="select"] svg { fill: #1c2a6b !important; }
@@ -1117,34 +1121,21 @@ ul[role="listbox"] { list-style:none !important; margin:0; }
 li[role="option"] { background-color: #ffffff !important; color: #1c2a6b !important; border-radius:10px; margin:2px 0; transition:background .12s,padding-left .12s; }
 li[role="option"]:hover, li[role="option"][aria-selected="true"] { background-color: #eef3ff !important; color: #1f2a7c !important; padding-left:18px; }
 li[role="option"][aria-selected="true"]{font-weight:700;}
+label[data-baseweb="checkbox"]:has(input:checked) > span:first-child{background-color:#1f2a7c !important;border-color:#1f2a7c !important}
 
-/* ---------- EXTREME TAB OVERRIDE ---------- */
-/* Paksa semua variabel warna ke biru */
-:root, html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stTabs"] {
-    --primary-color: #1f2a7c !important;
-    --primary: #1f2a7c !important;
-    --theme-primary: #1f2a7c !important;
-}
-
-/* Hancurkan garis merah di bawah tab */
-[data-baseweb="tab-highlight"], 
-[data-baseweb="tab-border"],
-.stTabs [data-baseweb="tab-highlight"],
-.stTabs [data-baseweb="tab-border"],
-[data-testid="stTabs"] [data-baseweb="tab-highlight"],
-[data-testid="stTabs"] [data-baseweb="tab-border"],
-div[role="tablist"] > div[data-baseweb="tab-highlight"],
-div[role="tablist"] > div[data-baseweb="tab-border"] {
+/* ---------- TAB: BIRU TUA (menimpa merah bawaan Streamlit) ---------- */
+/* Selektor memakai role="tab" / role="tablist" agar tetap kena walau struktur HTML Streamlit berubah */
+[data-baseweb="tab-highlight"], [data-baseweb="tab-border"],
+[role="tablist"] [data-baseweb="tab-highlight"], [role="tablist"] [data-baseweb="tab-border"],
+.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] {
     display: none !important;
     background: transparent !important;
     height: 0 !important;
     opacity: 0 !important;
     border: none !important;
 }
-
-/* Style dasar SEMUA tab */
-[data-testid="stTabs"] button[data-baseweb="tab"] {
-    background-color: #f5f8ff !important; 
+[role="tab"], button[data-baseweb="tab"] {
+    background-color: #f5f8ff !important;
     border: 1.5px solid #c9d6f5 !important;
     border-radius: 12px !important;
     padding: 8px 20px !important;
@@ -1153,30 +1144,23 @@ div[role="tablist"] > div[data-baseweb="tab-border"] {
     outline: none !important;
     box-shadow: none !important;
 }
-
-/* Paksa teks menjadi biru */
-[data-testid="stTabs"] button[data-baseweb="tab"] *, 
-[data-testid="stTabs"] button[data-baseweb="tab"] p,
-[data-testid="stTabs"] button[data-baseweb="tab"] div,
-[data-testid="stTabs"] button[data-baseweb="tab"] span {
+[role="tab"] *, button[data-baseweb="tab"] * {
     color: #1f2a7c !important;
     -webkit-text-fill-color: #1f2a7c !important;
     font-weight: 700 !important;
     fill: #1f2a7c !important;
 }
-
-/* Tab aktif (sidebar style) */
-[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
-    background: linear-gradient(90deg, #e6edff, #f5f8ff) !important; 
+[role="tab"]:hover, button[data-baseweb="tab"]:hover { background-color: #eef3ff !important; }
+[role="tab"][aria-selected="true"], button[data-baseweb="tab"][aria-selected="true"] {
+    background: linear-gradient(90deg, #e6edff, #f5f8ff) !important;
     box-shadow: inset 4px 0 0 #1f2a7c !important;
     border: 1.5px solid #c9d6f5 !important;
 }
-
-/* Hilangkan focus ring / outline merah saat diklik */
-[data-testid="stTabs"] button[data-baseweb="tab"]:focus,
-[data-testid="stTabs"] button[data-baseweb="tab"]:active,
-[data-testid="stTabs"] button[data-baseweb="tab"]:focus-visible {
+/* hilangkan cincin fokus merah saat tab diklik */
+[role="tab"]:focus, [role="tab"]:active, [role="tab"]:focus-visible,
+button[data-baseweb="tab"]:focus, button[data-baseweb="tab"]:active, button[data-baseweb="tab"]:focus-visible {
     outline: none !important;
+    outline-color: transparent !important;
     box-shadow: inset 4px 0 0 #1f2a7c !important;
     border-color: #c9d6f5 !important;
 }
@@ -1184,7 +1168,7 @@ div[role="tablist"] > div[data-baseweb="tab-border"] {
 /* PERBAIKAN WARNA EXPANDER */
 [data-testid="stExpander"]{border:1px solid var(--line) !important;border-radius:16px !important;background:#fff;box-shadow:var(--shadow);transition:box-shadow .25s}
 [data-testid="stExpander"]:hover{box-shadow:var(--shadow-hi)}
-[data-testid="stExpander"] summary, 
+[data-testid="stExpander"] summary,
 [data-testid="stExpander"] summary * { font-weight:600 !important; color: var(--navy) !important; }
 [data-testid="stExpander"] summary svg { fill: var(--navy) !important; }
 
@@ -1237,19 +1221,16 @@ def days_text(days):
 # 6b. MODE AUTHOR (password di Streamlit Secrets: AUTHOR_PASSWORD)
 # =====================================================================
 def _author_secret():
-    # =========================================================================
-    # CARA MENGATUR PASSWORD DI STREAMLIT CLOUD SECRETS:
-    # 1. Buka dashboard Streamlit Cloud Anda.
-    # 2. Klik ikon titik tiga pada app -> Settings -> Secrets.
-    # 3. Tambahkan baris berikut (ganti dengan password rahasia Anda):
-    #    AUTHOR_PASSWORD = "password_rahasia_anda"
-    # 4. Klik Save. Password default di bawah ini ("admin123") hanya digunakan jika Secrets belum diset.
-    # =========================================================================
+    """Password author HANYA dari Streamlit Secrets (AUTHOR_PASSWORD) atau environment. Tidak ada password bawaan.
+
+    Cara mengatur di Streamlit Cloud: app -> Settings -> Secrets, lalu tambahkan:
+        AUTHOR_PASSWORD = "password_rahasia_anda"
+    """
     try:
         v = st.secrets.get("AUTHOR_PASSWORD")
     except Exception:
         v = None
-    return str(v) if v else os.environ.get("AUTHOR_PASSWORD", "admin123")
+    return str(v) if v else os.environ.get("AUTHOR_PASSWORD", "")
 
 
 def is_author():
@@ -1257,7 +1238,7 @@ def is_author():
 
 
 def author_box():
-    """Kotak login author di sidebar."""
+    """Kotak login author di sidebar. Tanpa AUTHOR_PASSWORD di Secrets, tidak ada yang bisa masuk."""
     with st.sidebar.expander("🔐 Author"):
         if is_author():
             st.success("Mode author aktif")
@@ -1273,7 +1254,7 @@ def author_box():
                 st.rerun()
             else:
                 time.sleep(1)
-                st.error("Password salah.")
+                st.error("Password salah." if secret else "Password author belum diatur di Secrets aplikasi.")
 
 
 # =====================================================================
@@ -1291,7 +1272,7 @@ def dash_th():
       <div class='kc'><div class='t'>Persentase pengisian</div><div class='v'><span class='cnt' style='--n:{pf:.0f}' data-s='%'></span></div><div class='s'>{fd} data terisi dari {d} slot jatuh tempo</div></div>
       <div class='kc' style='border-top-color:#2e9e5b'><div class='t'>Suhu dalam batas ({lo:g}&ndash;{hi:g} &deg;C)</div><div class='v' style='color:#2e9e5b'><span class='cnt' style='--n:{po:.0f}' data-s='%'></span></div><div class='s'>{o} dari {f} data terisi</div></div>
       <div class='kc' style='border-top-color:#2e9e5b'><div class='t'>Kelembaban dalam batas ({hl:g}&ndash;{hh:g} %)</div><div class='v' style='color:#2e9e5b'><span class='cnt' style='--n:{ph:.0f}' data-s='%'></span></div><div class='s'>{ho} dari {f} data terisi</div></div>
-      <div class='kc' style='border-top-color:#1f2a7c'><div class='t'>Suhu DI ATAS batas</div><div class='v' style='color:#1f2a7c'><span class='cnt' style='--n:{hi_n}' data-s=''></span></div><div class='s'>slot pengukuran</div></div>
+      <div class='kc' style='border-top-color:#d64545'><div class='t'>Suhu DI ATAS batas</div><div class='v' style='color:#d64545'><span class='cnt' style='--n:{hi_n}' data-s=''></span></div><div class='s'>slot pengukuran</div></div>
       <div class='kc' style='border-top-color:#f0a81c'><div class='t'>Suhu di bawah batas</div><div class='v' style='color:#d98e00'><span class='cnt' style='--n:{lo_n}' data-s=''></span></div><div class='s'>slot pengukuran</div></div>
       <div class='kc' style='border-top-color:#9aa5b1'><div class='t'>Slot kosong / belum diisi</div><div class='v' style='color:#667'><span class='cnt' style='--n:{e}' data-s=''></span></div><div class='s'>{fe} tanggal kosong total</div></div>
     </div>""".format(pf=an["pct_fill"], f=an["filled"], fd=an["filled_due"], d=an["due"], lo=std["t_lo"], hi=std["t_hi"], po=an["pct_ok"], o=an["ok"],
@@ -1535,7 +1516,7 @@ def qc_checklist_ui(dev, tgl, petugas, p):
         else:
             ok = auto[auto_kind(it)]
             st.markdown("{} {} - <span style='font-size:12px;color:{}'>{}</span>".format(
-                "✅" if ok else "⬜", escape(it), "#2e9e5b" if ok else "#1f2a7c",
+                "✅" if ok else "⬜", escape(it), "#2e9e5b" if ok else "#d64545",
                 "terisi otomatis dari data Suhu & Kelembaban ({})".format(escape(dev["ruang"])) if ok else "isi dulu Suhu & Kelembaban ruangan ini"),
                 unsafe_allow_html=True)
     st.text_area("Catatan / temuan (opsional)", value=existing["catatan"] if existing else "", key=pk + "_cat")
@@ -1674,7 +1655,7 @@ def page_backdate():
         backdate_qc()
 
 
-def _preview(sh, base_px=1400, scale=0.85): # Diperbesar dari 0.6 menjadi 0.85
+def _preview(sh, base_px=1400, scale=0.85):
     """Preview formulir dengan ukuran tetap (85%)."""
     wpx = int(base_px * scale)
     components.html("<div style='overflow:auto;background:#fff;border:1px solid #d5dbe3'>{}</div>".format(sheet_to_svg(sh, wpx)),
@@ -1683,6 +1664,7 @@ def _preview(sh, base_px=1400, scale=0.85): # Diperbesar dari 0.6 menjadi 0.85
 
 def page_download():
     header()
+    st.caption("Download formulir resmi (PDF A4 landscape) dan data (CSV)")
     names = ["🌡️ Form Suhu & Kelembaban", "🛠️ Form Checklist QC Peralatan"]
     if is_author():   # generator QR hanya untuk author
         names.append("🔳 QR Code Ruangan")
@@ -1705,7 +1687,6 @@ def page_download():
                  "Suhu (°C)": e["suhu"], "Kelembaban (%)": e["hum"], "Staff": e["petugas"], "Temuan": e["ket"]}
                 for (d, s), e in sorted(month_data(ruang, y, m).items())]
         c3.download_button("⬇️ Data (CSV)", pd.DataFrame(rows).to_csv(index=False).encode("utf-8-sig"), fname + ".csv", "text/csv", key="dl_csv")
-        # st.caption("Format mengikuti {}: grafik titik suhu (16-27 °C) dan kelembaban (10-100 %), pita merah muda = batas normal, titik merah = di luar batas.".format(FORM_CODE_TH)) <-- DIHAPUS
     with t2:
         alat, m2, y2 = filter_bar("dq", [d["nama"] for d in devices()], "Peralatan")
         dev = dev_by_name(alat)
@@ -1807,6 +1788,5 @@ with st.sidebar:
                     except Exception as ex:
                         st.error("Gagal restore: {}".format(ex))
     author_box()
-    # st.caption("{} · RAD 2209.xx/00".format(FORM_CODE_TH))  <-- DIHAPUS SESUAI PERMINTAAN
 
 pg.run()
