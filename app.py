@@ -177,17 +177,173 @@ ECOLS = ["id", "dibuat", "ruang", "tanggal", "shift", "suhu", "kelembapan", "pet
 QCOLS = ["id", "dibuat", "alat", "tanggal", "petugas", "hasil", "catatan"]
 
 
-def save_cfg(c):
-    """Simpan ruang & staff. Daftar peralatan (devices) tetap dari kode, kecuali sudah ada manual di config.json."""
-    out = {k: c[k] for k in ("rooms", "staff", "base_url") if k in c}
-    if os.path.exists(CFG_FILE):
+# ---------------------------------------------------------------------
+# PENYIMPANAN
+#  - Bila SUPABASE_URL dan SUPABASE_KEY diisi di Secrets  -> data disimpan di database Supabase (PERMANEN).
+#  - Bila tidak diisi -> CSV lokal di folder data_shag (HILANG saat Streamlit Cloud restart; hanya untuk uji coba).
+# ---------------------------------------------------------------------
+DB_CACHE_TTL = 20      # detik: isian dari HP lain muncul di dashboard paling lambat sekian detik
+_STORAGE_ERRS = []     # (di-reset tiap run) agar pesan error tidak berulang
+
+
+class StorageError(Exception):
+    pass
+
+
+def _secret(name, default=""):
+    try:
+        v = st.secrets.get(name)
+    except Exception:
+        v = None
+    return str(v).strip() if v else os.environ.get(name, default)
+
+
+def db_on():
+    return bool(_secret("SUPABASE_URL") and _secret("SUPABASE_KEY"))
+
+
+def _sb(method, path, params=None, body=None, prefer=None):
+    """Panggilan REST ke Supabase (PostgREST). Kunci rahasia tidak pernah ikut di pesan error."""
+    import requests
+    key = _secret("SUPABASE_KEY")
+    headers = {"apikey": key, "Content-Type": "application/json"}
+    if key.startswith("eyJ"):   # kunci lama (JWT) boleh lewat Authorization; kunci baru sb_secret_... HANYA lewat apikey
+        headers["Authorization"] = "Bearer " + key
+    if prefer:
+        headers["Prefer"] = prefer
+    url = _secret("SUPABASE_URL").rstrip("/") + "/rest/v1/" + path
+    try:
+        r = requests.request(method, url, params=params, json=body, headers=headers, timeout=20)
+    except Exception as e:
+        raise StorageError("Tidak bisa menghubungi database ({})".format(type(e).__name__))
+    if r.status_code >= 300:
+        raise StorageError("Database menolak permintaan ({}): {}".format(r.status_code, r.text[:200]))
+    return r
+
+
+def _ym(x):
+    """Normalisasi ke 'YYYY-MM' dari str / date / (tahun, bulan)."""
+    if x is None:
+        return None
+    if isinstance(x, str):
+        return x[:7]
+    if isinstance(x, (dt.date, dt.datetime)):
+        return "{:04d}-{:02d}".format(x.year, x.month)
+    return "{:04d}-{:02d}".format(int(x[0]), int(x[1]))
+
+
+def _next_ym(ym):
+    y, m = int(ym[:4]), int(ym[5:7])
+    y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return "{:04d}-{:02d}".format(y, m)
+
+
+@st.cache_data(ttl=DB_CACHE_TTL, show_spinner=False)
+def _sb_fetch(table, ym=None, recent=0):
+    """Ambil baris dari tabel (dibatasi 1 bulan bila ym diisi). Hasil di-cache beberapa detik agar cepat."""
+    if recent:
+        return _sb("GET", table, [("select", "*"), ("order", "id.desc"), ("limit", str(recent))]).json()
+    rows, off = [], 0
+    while True:   # PostgREST membatasi 1000 baris per permintaan -> ambil bertahap
+        params = [("select", "*"), ("order", "id.asc"), ("limit", "1000"), ("offset", str(off))]
+        if ym:
+            params += [("tanggal", "gte." + ym + "-01"), ("tanggal", "lt." + _next_ym(ym) + "-01")]
+        chunk = _sb("GET", table, params).json()
+        rows += chunk
+        if len(chunk) < 1000:
+            return rows
+        off += 1000
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _sb_cfg():
+    r = _sb("GET", "app_config", [("select", "value"), ("key", "eq.config")]).json()
+    return r[0]["value"] if r else ""
+
+
+def _warn_storage(msg):
+    if msg not in _STORAGE_ERRS:
+        _STORAGE_ERRS.append(msg)
+        st.error("Penyimpanan data bermasalah. Hubungi admin." + ((" Detail: " + msg) if is_author() else ""))
+
+
+def _to_df(rows, cols):
+    df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=cols)
+    for c in cols:
+        if c not in df.columns:
+            df[c] = ""
+    return df[cols].fillna("").astype(str)
+
+
+def _read(path, cols):
+    if os.path.exists(path):
         try:
-            with open(CFG_FILE, encoding="utf-8") as f:
-                old = json.load(f)
-            if old.get("devices"):
-                out["devices"] = old["devices"]
+            df = pd.read_csv(path, dtype=str, encoding="utf-8-sig").fillna("")
         except Exception:
-            pass
+            df = pd.DataFrame(columns=cols)
+    else:
+        df = pd.DataFrame(columns=cols)
+    for c in cols:
+        if c not in df.columns:
+            df[c] = ""
+    return df[cols]
+
+
+def _next_id(df):
+    return str(1 + max([int(x) for x in df["id"] if str(x).isdigit()] + [0]))
+
+
+def _load(table, path, cols, ym=None, recent=0):
+    ym = _ym(ym)
+    if db_on():
+        try:
+            return _to_df(_sb_fetch(table, ym, recent), cols)
+        except StorageError as e:
+            _warn_storage(str(e))
+            return pd.DataFrame(columns=cols)
+    df = _read(path, cols)
+    if ym:
+        df = df[df["tanggal"].str.startswith(ym)]
+    if recent:
+        df = df.tail(recent)
+    return df
+
+
+def load_entries(ym=None, recent=0):
+    """ym = bulan yang dibutuhkan (date / (tahun, bulan) / 'YYYY-MM'); recent = N baris terbaru."""
+    return _load("entries", ENTRY_FILE, ECOLS, ym, recent)
+
+
+def load_qc(ym=None, recent=0):
+    return _load("qc_entries", QC_FILE, QCOLS, ym, recent)
+
+
+def _cfg_raw():
+    try:
+        if db_on():
+            txt = _sb_cfg()
+            return json.loads(txt) if txt else {}
+        if os.path.exists(CFG_FILE):
+            with open(CFG_FILE, encoding="utf-8") as f:
+                return json.load(f)
+    except StorageError as e:
+        _warn_storage(str(e))
+    except Exception:
+        pass
+    return {}
+
+
+def save_cfg(c):
+    """Simpan ruang, staff, alamat aplikasi. Daftar peralatan (devices) tetap dari kode, kecuali sudah ada manual di config."""
+    out = {k: c[k] for k in ("rooms", "staff", "base_url") if k in c}
+    old = _cfg_raw()
+    if old.get("devices"):
+        out["devices"] = old["devices"]
+    if db_on():
+        _sb("POST", "app_config", {"on_conflict": "key"}, [{"key": "config", "value": json.dumps(out, ensure_ascii=False)}],
+            "resolution=merge-duplicates,return=minimal")
+        _sb_cfg.clear()
+        return
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(CFG_FILE, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
@@ -195,16 +351,20 @@ def save_cfg(c):
 
 def load_cfg():
     cfg = json.loads(json.dumps(DEFAULT_CFG))
-    if os.path.exists(CFG_FILE):
-        try:
-            with open(CFG_FILE, encoding="utf-8") as f:
-                c = json.load(f)
-            for k in ("rooms", "staff", "devices", "base_url"):
-                if c.get(k):
-                    cfg[k] = c[k]
-        except Exception:
-            pass
+    c = _cfg_raw()
+    for k in ("rooms", "staff", "devices", "base_url"):
+        if c.get(k):
+            cfg[k] = c[k]
     return cfg
+
+
+def try_save_cfg(cfg):
+    try:
+        save_cfg(cfg)
+        return True
+    except StorageError as e:
+        st.error("Gagal menyimpan: {}".format(e))
+        return False
 
 
 def rooms():
@@ -233,35 +393,15 @@ def dev_by_name(name):
     return devices()[0]
 
 
-def _read(path, cols):
-    if os.path.exists(path):
-        try:
-            df = pd.read_csv(path, dtype=str, encoding="utf-8-sig").fillna("")
-        except Exception:
-            df = pd.DataFrame(columns=cols)
-    else:
-        df = pd.DataFrame(columns=cols)
-    for c in cols:
-        if c not in df.columns:
-            df[c] = ""
-    return df[cols]
-
-
-def _next_id(df):
-    return str(1 + max([int(x) for x in df["id"] if str(x).isdigit()] + [0]))
-
-
-def load_entries():
-    return _read(ENTRY_FILE, ECOLS)
-
-
-def load_qc():
-    return _read(QC_FILE, QCOLS)
-
-
 def save_entry(**kw):
     """Simpan 1 pengukuran. Data dengan ruang+tanggal+shift yang sama ditimpa."""
-    df = load_entries()
+    kw["dibuat"] = now().strftime("%Y-%m-%d %H:%M:%S")
+    if db_on():
+        row = {c: str(kw.get(c, "")) for c in ECOLS if c != "id"}
+        _sb("POST", "entries", {"on_conflict": "ruang,tanggal,shift"}, [row], "resolution=merge-duplicates,return=minimal")
+        _sb_fetch.clear()
+        return
+    df = _read(ENTRY_FILE, ECOLS)
     if len(df):
         m = (df["ruang"] == kw["ruang"]) & (df["tanggal"] == kw["tanggal"]) & (df["shift"] == kw["shift"])
         df = df[~m]
@@ -269,36 +409,77 @@ def save_entry(**kw):
     for k, v in kw.items():
         row[k] = str(v)
     row["id"] = _next_id(df)
-    row["dibuat"] = now().strftime("%Y-%m-%d %H:%M:%S")
     df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
     os.makedirs(DATA_DIR, exist_ok=True)
     df.to_csv(ENTRY_FILE, index=False)
 
 
 def delete_entry(eid):
-    df = load_entries()
+    if db_on():
+        _sb("DELETE", "entries", {"id": "eq." + str(eid)})
+        _sb_fetch.clear()
+        return
+    df = _read(ENTRY_FILE, ECOLS)
     df[df["id"] != str(eid)].to_csv(ENTRY_FILE, index=False)
 
 
 def save_qc(alat, tanggal, petugas, hasil, catatan):
     """Simpan checklist QC 1 alat 1 hari. Data alat+tanggal yang sama ditimpa."""
-    df = load_qc()
+    dibuat = now().strftime("%Y-%m-%d %H:%M:%S")
+    hasil_txt = json.dumps(hasil, ensure_ascii=False)
+    if db_on():
+        _sb("POST", "qc_entries", {"on_conflict": "alat,tanggal"},
+            [dict(dibuat=dibuat, alat=alat, tanggal=tanggal, petugas=petugas, hasil=hasil_txt, catatan=catatan)],
+            "resolution=merge-duplicates,return=minimal")
+        _sb_fetch.clear()
+        return
+    df = _read(QC_FILE, QCOLS)
     if len(df):
         df = df[~((df["alat"] == alat) & (df["tanggal"] == tanggal))]
-    row = dict(id=_next_id(df), dibuat=now().strftime("%Y-%m-%d %H:%M:%S"), alat=alat, tanggal=tanggal,
-               petugas=petugas, hasil=json.dumps(hasil, ensure_ascii=False), catatan=catatan)
+    row = dict(id=_next_id(df), dibuat=dibuat, alat=alat, tanggal=tanggal, petugas=petugas, hasil=hasil_txt, catatan=catatan)
     df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
     os.makedirs(DATA_DIR, exist_ok=True)
     df.to_csv(QC_FILE, index=False)
 
 
 def delete_qc(eid):
-    df = load_qc()
+    if db_on():
+        _sb("DELETE", "qc_entries", {"id": "eq." + str(eid)})
+        _sb_fetch.clear()
+        return
+    df = _read(QC_FILE, QCOLS)
     df[df["id"] != str(eid)].to_csv(QC_FILE, index=False)
 
 
+def replace_table(table, path, df, cols, keys):
+    """Restore dari CSV: mengganti SELURUH isi tabel."""
+    df = df[cols].drop_duplicates(subset=keys, keep="last")
+    if db_on():
+        rows = [{c: str(v) for c, v in r.items() if c != "id"} for r in df.to_dict("records")]
+        _sb("DELETE", table, {"id": "gt.0"})
+        for i in range(0, len(rows), 500):
+            _sb("POST", table, None, rows[i:i + 500], "return=minimal")
+        _sb_fetch.clear()
+        return len(rows)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    df.to_csv(path, index=False)
+    return len(df)
+
+
+def storage_test():
+    """(ok, pesan) untuk kotak status penyimpanan di sidebar author."""
+    if not db_on():
+        return False, "Mode CSV lokal - data HILANG saat aplikasi restart. Isi SUPABASE_URL dan SUPABASE_KEY di Secrets."
+    try:
+        for t in ("entries", "qc_entries", "app_config"):
+            _sb("GET", t, [("select", "*"), ("limit", "1")])
+        return True, "Terhubung ke Supabase - 3 tabel siap. Data tersimpan permanen."
+    except StorageError as e:
+        return False, str(e)
+
+
 def qc_get(alat, tgl):
-    df = load_qc()
+    df = load_qc(ym=tgl)
     df = df[(df["alat"] == alat) & (df["tanggal"] == tgl.isoformat())]
     if not len(df):
         return None
@@ -368,7 +549,7 @@ def slot_due(d, s):
 def month_data(ruang, y, m):
     """{(tanggal, 'P'|'S'|'M'): dict(suhu, hum, petugas, ket, id)}"""
     out = {}
-    df = load_entries()
+    df = load_entries(ym=(y, m))
     df = df[df["ruang"] == ruang]
     for r in df.to_dict("records"):
         try:
@@ -427,7 +608,7 @@ def analyze(ruang, y, m):
 
 def abnormal_today():
     """Pengukuran HARI INI (semua ruang) yang di luar batas -> perlu hubungi teknisi."""
-    df = load_entries()
+    df = load_entries(ym=TODAY())
     df = df[df["tanggal"] == TODAY().isoformat()]
     bad = []
     for r in df.to_dict("records"):
@@ -475,7 +656,7 @@ def auto_status(dev, tgl):
 def qc_month(dev, y, m):
     """{tanggal: dict(petugas, done=set(item), catatan)} - sudah digabung dengan item otomatis suhu/kelembaban."""
     out = {}
-    df = load_qc()
+    df = load_qc(ym=(y, m))
     df = df[df["alat"] == dev["nama"]]
     for r in df.to_dict("records"):
         try:
@@ -816,6 +997,7 @@ def build_qc_form(dev, y, m, data):
         yend += 24 + min(len(notes), 6) * 10
     sh.height = yend + 20
     return sh
+
 
 
 # ---------- LEMBAR QR CODE RUANGAN (stiker, 6 per halaman A4 portrait) ----------
@@ -1225,6 +1407,7 @@ def days_text(days):
     return ", ".join(str(d) for d in days) if days else "-"
 
 
+
 # =====================================================================
 # 6b. MODE AUTHOR (password di Streamlit Secrets: AUTHOR_PASSWORD)
 # =====================================================================
@@ -1234,11 +1417,7 @@ def _author_secret():
     Cara mengatur di Streamlit Cloud: app -> Settings -> Secrets, lalu tambahkan:
         AUTHOR_PASSWORD = "password_rahasia_anda"
     """
-    try:
-        v = st.secrets.get("AUTHOR_PASSWORD")
-    except Exception:
-        v = None
-    return str(v) if v else os.environ.get("AUTHOR_PASSWORD", "")
+    return _secret("AUTHOR_PASSWORD")
 
 
 def is_author():
@@ -1303,6 +1482,17 @@ def dash_th():
     st.markdown("<div class='lg2'><span><i class='s-ok'></i>Dalam batas</span><span><i class='s-high'></i>&#9650; Di atas batas</span><span><i class='s-low'></i>&#9660; Di bawah batas</span>"
                 "<span><i class='s-empty'></i>Belum diisi</span></div>", unsafe_allow_html=True)
 
+    hi_days = sorted(set(d for d, _, _ in an["high"]))
+    lo_days = sorted(set(d for d, _, _ in an["low"]))
+    belum = ["{} tanggal {}".format(SHIFT_NAME[s], d) for d in sorted(an["empty_by_day"]) for s in "PSM" if s in an["empty_by_day"][d]]
+    st.markdown("<div class='box'><b>Ringkasan {} - {} {}</b><br>"
+                "&#128308; Tanggal dengan suhu <b>di atas batas</b> ({:g} &deg;C): <b>{}</b><br>"
+                "&#128992; Tanggal dengan suhu di bawah batas ({:g} &deg;C): <b>{}</b><br>"
+                "&#9898; Tanggal yang belum diisi: <b>{}</b></div>".format(
+                    escape(ruang), BLN[m - 1], y, std["t_hi"], days_text(hi_days), std["t_lo"], days_text(lo_days),
+                    ", ".join(belum) if belum else "-"),
+                unsafe_allow_html=True)
+
     data = month_data(ruang, y, m)
     if data:
         per_day = {}
@@ -1333,6 +1523,15 @@ def dash_th():
         st.markdown("**Kelembaban di luar batas ({:g}–{:g} %)**".format(std["h_lo"], std["h_hi"]))
         st.dataframe(pd.DataFrame([dict(Tanggal=d, Shift=SHIFT_NAME[s], **{"Kelembaban (%)": v, "Keterangan": "Di atas" if k == "high" else "Di bawah"}) for d, s, v, k in an["hum_bad"]]
                                   or [dict(Tanggal="-", Shift="-", **{"Kelembaban (%)": "-", "Keterangan": "-"})]), hide_index=True)
+
+    st.markdown("**Rekap semua ruangan - {} {}**".format(BLN[m - 1], y))
+    rows = []
+    for rn in room_names():
+        a = analyze(rn, y, m)
+        rows.append({"Ruangan": rn, "% Pengisian": round(a["pct_fill"]), "% Suhu dalam batas": round(a["pct_ok"]), "% Kelembaban dalam batas": round(a["pct_hum"]),
+                     "Suhu di atas batas": len(a["high"]), "Suhu di bawah batas": len(a["low"]), "Tanggal yang kosong": a["n_empty"],
+                     "Tanggal yang belum diisi": days_text(a["full_empty"])})
+    st.dataframe(pd.DataFrame(rows), hide_index=True)
 
 
 def dash_qc():
@@ -1381,16 +1580,84 @@ def dash_qc():
                                 "Hanya sebagian": ans[d["nama"]]["n_part"], "Hari belum diisi": ans[d["nama"]]["n_empty"]} for d in devs]), hide_index=True)
 
 
+def _status_text(e, std):
+    ts = classify(e["suhu"], std["t_lo"], std["t_hi"])
+    hs = classify(e["hum"], std["h_lo"], std["h_hi"])
+    parts = []
+    if ts != "ok":
+        parts.append("🔴 Suhu di atas batas" if ts == "high" else "🟠 Suhu di bawah batas")
+    if hs != "ok":
+        parts.append("🔴 Kelembaban di atas batas" if hs == "high" else "🟠 Kelembaban di bawah batas")
+    return " · ".join(parts) if parts else "✅ Normal"
+
+
+def history_tab():
+    """Riwayat angka hasil pengisian (terbaru di atas). Data lama tetap bisa dibuka dengan memilih bulan/tahun."""
+    st.caption("Riwayat angka hasil pengisian. Pilih ruangan/peralatan, bulan, dan tahun; data bulan-bulan sebelumnya tetap tersimpan.")
+    jenis = st.radio("Jenis data", ["Suhu & Kelembaban", "QC Peralatan"], horizontal=True, key="rw_jenis")
+    if jenis == "Suhu & Kelembaban":
+        pilih, m, y = filter_bar("rw", ["Semua ruangan"] + room_names(), "Ruangan")
+        targets = room_names() if pilih == "Semua ruangan" else [pilih]
+        rows, ts_all, hs_all = [], [], []
+        for rn in targets:
+            std = room_std(rn)
+            for (d, s), e in month_data(rn, y, m).items():
+                ts_all.append(e["suhu"])
+                hs_all.append(e["hum"])
+                rows.append((d, "PSM".index(s), {"Tanggal": dt.date(y, m, d).strftime("%d/%m/%Y"), "Shift": SHIFT_NAME[s], "Ruangan": rn,
+                                                  "Suhu (°C)": e["suhu"], "Kelembaban (%)": e["hum"], "Status": _status_text(e, std),
+                                                  "Staff": staff_label(e["petugas"]), "Temuan": e["ket"]}))
+        if not rows:
+            st.info("Belum ada data pada {} {} untuk {}.".format(BLN[m - 1], y, pilih))
+            return
+        rows.sort(key=lambda r: (r[0], r[1]), reverse=True)   # terbaru di atas
+        cards = [("Jumlah data", str(len(rows))), ("Suhu rata-rata", "{:.1f} °C".format(sum(ts_all) / len(ts_all))),
+                 ("Suhu terendah – tertinggi", "{:g} – {:g} °C".format(min(ts_all), max(ts_all))),
+                 ("Kelembaban rata-rata", "{:.0f} %".format(sum(hs_all) / len(hs_all))),
+                 ("Kelembaban terendah – tertinggi", "{:g} – {:g} %".format(min(hs_all), max(hs_all)))]
+        st.markdown("<div class='kp'>" + "".join("<div class='kc'><div class='t'>{}</div><div class='v' style='font-size:22px'>{}</div></div>".format(t, v)
+                                                 for t, v in cards) + "</div>", unsafe_allow_html=True)
+        df = pd.DataFrame([r[2] for r in rows])
+        if pilih != "Semua ruangan":
+            df = df.drop(columns=["Ruangan"])
+        st.dataframe(df, hide_index=True)
+        st.download_button("⬇️ Unduh tabel ini (CSV)", df.to_csv(index=False).encode("utf-8-sig"),
+                           "Riwayat_Suhu_{}_{}_{:02d}.csv".format(pilih.replace(" ", "_"), y, m), "text/csv", key="rw_csv")
+    else:
+        alat, m, y = filter_bar("rq", [d["nama"] for d in devices()], "Peralatan")
+        dev = dev_by_name(alat)
+        qd = qc_month(dev, y, m)
+        daily = [i for i in dev["items"] if is_daily(i)]
+        rows = []
+        for d in sorted(qd, reverse=True):   # terbaru di atas
+            e = qd[d]
+            n_done = len([i for i in daily if i in e["done"]])
+            rows.append({"Tanggal": dt.date(y, m, d).strftime("%d/%m/%Y"), "Kegiatan selesai": "{}/{}".format(n_done, len(daily)),
+                         "Status": "✅ Lengkap" if n_done == len(daily) else "½ Sebagian", "Staff": staff_label(e["petugas"]) if e["petugas"] else "-",
+                         "Catatan": e["catatan"]})
+        if not rows:
+            st.info("Belum ada data QC pada {} {} untuk {}.".format(BLN[m - 1], y, alat))
+            return
+        df = pd.DataFrame(rows)
+        st.dataframe(df, hide_index=True)
+        st.download_button("⬇️ Unduh tabel ini (CSV)", df.to_csv(index=False).encode("utf-8-sig"),
+                           "Riwayat_QC_{}_{}_{:02d}.csv".format(alat.replace(" ", "_"), y, m), "text/csv", key="rq_csv")
+
+
 def page_dashboard():
     header()
+    if is_author() and not db_on():
+        st.warning("Data masih disimpan di CSV lokal dan akan HILANG saat aplikasi restart. Hubungkan database Supabase (lihat README).")
     bad = abnormal_today()
     if bad:
         st.markdown("<div class='alert'><b>&#9888; Hubungi teknisi / maintenance</b> - pengukuran hari ini di luar batas normal:<br>{}</div>".format("<br>".join(bad)), unsafe_allow_html=True)
-    t1, t2 = st.tabs(["🌡️ Suhu & Kelembaban", "🛠️ QC Peralatan"])
+    t1, t2, t3 = st.tabs(["🌡️ Suhu & Kelembaban", "🛠️ QC Peralatan", "📋 Riwayat Data"])
     with t1:
         dash_th()
     with t2:
         dash_qc()
+    with t3:
+        history_tab()
 
 
 HARI = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
@@ -1417,8 +1684,12 @@ def _save_th(p, ruang, tgl, shift_key, petugas):
     if abn and not temuan:
         ss[p + "_msg"] = ("error", "Kolom Temuan wajib diisi karena suhu/kelembaban di luar batas standar.")
         return
-    save_entry(ruang=ruang, tanggal=tgl.isoformat(), shift=shift_key, suhu=suhu, kelembapan=hum, petugas=petugas,
-               status="Abnormal" if abn else "Normal", temuan=temuan, tindakan=tindakan if abn else "")
+    try:
+        save_entry(ruang=ruang, tanggal=tgl.isoformat(), shift=shift_key, suhu=suhu, kelembapan=hum, petugas=petugas,
+                   status="Abnormal" if abn else "Normal", temuan=temuan, tindakan=tindakan if abn else "")
+    except StorageError as e:
+        ss[p + "_msg"] = ("error", "DATA BELUM TERSIMPAN - {}. Coba lagi atau hubungi admin.".format(e))
+        return
     ss[p + "_msg"] = ("success", "Tersimpan: {} - {} - {} ({} °C / {} %).{}".format(
         ruang, tgl.strftime("%d/%m/%Y"), SHIFT_NAME[shift_key], fnum(suhu), fnum(hum), " Segera hubungi teknisi." if abn else ""))
     for k in ("_suhu", "_hum", "_temuan", "_timpa"):   # kosongkan isian agar tidak tersimpan dobel di jam berikutnya
@@ -1445,7 +1716,7 @@ def th_entry_form(ruang, tgl, shift_key, petugas, p):
         st.error("Di luar batas normal - segera hubungi teknisi / maintenance.")
         st.text_area("Temuan ketidaksesuaian * (wajib karena di luar batas standar)", key=p + "_temuan")
         st.selectbox("Tindakan korektif *", ["Lapor Teknisi AC / Maintenance", "Pengaturan AC / Dehumidifier", "Lainnya"], key=p + "_tindakan")
-    ada = load_entries()
+    ada = load_entries(ym=tgl)
     same = ada[(ada["ruang"] == ruang) & (ada["tanggal"] == tgl.isoformat()) & (ada["shift"] == shift_key)]
     dup = len(same) > 0
     timpa = True
@@ -1469,7 +1740,11 @@ def _save_qc_cb(pk, alat, tgl, petugas, pairs):
     if not hasil and not catatan and not any(auto_status(dev_by_name(alat), tgl).values()):
         ss[pk + "_msg"] = ("error", "Belum ada kegiatan yang dicentang.")
         return
-    save_qc(alat, tgl.isoformat(), petugas, hasil, catatan)
+    try:
+        save_qc(alat, tgl.isoformat(), petugas, hasil, catatan)
+    except StorageError as e:
+        ss[pk + "_msg"] = ("error", "DATA BELUM TERSIMPAN - {}. Coba lagi atau hubungi admin.".format(e))
+        return
     ss[pk + "_msg"] = ("success", "Checklist tersimpan: {} - {} ({} kegiatan dicentang manual).".format(alat, tgl.strftime("%d/%m/%Y"), len(hasil)))
 
 
@@ -1575,7 +1850,7 @@ def backdate_th():
                     "4. Bila di luar batas standar, temuan & tindakan korektif wajib diisi dan segera hubungi teknisi.<br><br>"
                     "Suhu & kelembaban yang diinput otomatis menandai 2 kegiatan pertama pada checklist QC peralatan terkait.</div>", unsafe_allow_html=True)
     st.markdown("**Data terakhir - {}**".format(ruang))
-    df = load_entries()
+    df = load_entries(recent=300)
     df = df[df["ruang"] == ruang]
     if len(df):
         df = df.sort_values("id", key=lambda s: s.astype(int), ascending=False).head(15)
@@ -1583,8 +1858,11 @@ def backdate_th():
         cc1, cc2 = st.columns([1, 3])
         did = cc1.selectbox("Hapus data ID", list(df["id"]), key="in_del")
         if cc2.button("Hapus data terpilih", key="in_del_btn"):
-            delete_entry(did)
-            st.success("Data ID {} dihapus. Muat ulang halaman untuk memperbarui tabel.".format(did))
+            try:
+                delete_entry(did)
+                st.success("Data ID {} dihapus. Muat ulang halaman untuk memperbarui tabel.".format(did))
+            except StorageError as e:
+                st.error("Gagal menghapus: {}".format(e))
     else:
         st.caption("Belum ada data yang diinput untuk ruangan ini.")
 
@@ -1607,7 +1885,7 @@ def backdate_qc():
                     "3. <i>Periksa Suhu/Kelembaban ruangan</i> terisi otomatis dari data Suhu & Kelembaban. Alat <i>Mobile</i> tidak terhubung ke ruang tertentu, jadi dicentang manual.<br>"
                     "4. Catatan tampil di bawah formulir.<br>5. <i>Flat field Test (Mingguan)</i> tidak dihitung sebagai kegiatan harian di dashboard.</div>", unsafe_allow_html=True)
     st.markdown("**Data terakhir - {}**".format(alat))
-    df = load_qc()
+    df = load_qc(recent=300)
     df = df[df["alat"] == alat]
     if len(df):
         df = df.sort_values("id", key=lambda s: s.astype(int), ascending=False).head(15).copy()
@@ -1622,8 +1900,11 @@ def backdate_qc():
         cc1, cc2 = st.columns([1, 3])
         did = cc1.selectbox("Hapus data ID", list(df["id"]), key="qi_del")
         if cc2.button("Hapus data terpilih", key="qi_del_btn"):
-            delete_qc(did)
-            st.success("Data ID {} dihapus. Muat ulang halaman untuk memperbarui tabel.".format(did))
+            try:
+                delete_qc(did)
+                st.success("Data ID {} dihapus. Muat ulang halaman untuk memperbarui tabel.".format(did))
+            except StorageError as e:
+                st.error("Gagal menghapus: {}".format(e))
     else:
         st.caption("Belum ada checklist yang diinput untuk peralatan ini.")
 
@@ -1699,6 +1980,8 @@ def page_download():
             download_qr_tab()
 
 
+
+
 def download_qr_tab():
     if not is_author():
         return
@@ -1709,8 +1992,8 @@ def download_qr_tab():
     if st.button("Simpan alamat ini", key="qr_base_save"):
         cfg = load_cfg()
         cfg["base_url"] = base.rstrip("/")
-        save_cfg(cfg)
-        st.success("Alamat disimpan.")
+        if try_save_cfg(cfg):
+            st.success("Alamat disimpan.")
     sheets = build_qr_sheets(base)
     _preview(sheets[0], 900)
     st.download_button("⬇️ PDF stiker QR (semua ruangan, A4)", sheets_to_pdf(sheets, "QR Code Ruangan - Siloam Hospitals Agora", portrait=True),
@@ -1733,6 +2016,12 @@ pg = st.navigation([st.Page(f, title="{}. {}".format(i + 1, t), icon=ic, url_pat
 
 with st.sidebar:
     if is_author():
+        with st.expander("💾 Penyimpanan data", expanded=not db_on()):
+            if st.button("Tes koneksi database", key="db_test"):
+                ok, msg = storage_test()
+                (st.success if ok else st.error)(msg)
+            else:
+                st.caption("Supabase: terhubung" if db_on() else "Mode CSV lokal (TIDAK permanen)")
         with st.expander("Pengaturan ruang & staff"):
             cfg = load_cfg()
             nm = st.text_input("Nama ruang baru / ruang yang diubah", key="cfg_nm")
@@ -1744,29 +2033,35 @@ with st.sidebar:
             if st.button("Simpan ruang", key="cfg_add"):
                 if nm.strip():
                     cfg["rooms"] = [r for r in cfg["rooms"] if r["nama"] != nm.strip()] + [dict(nama=nm.strip(), t_lo=tl, t_hi=th, h_lo=hl, h_hi=hh, tekanan=False)]
-                    save_cfg(cfg)
-                    st.success("Ruang disimpan.")
+                    if try_save_cfg(cfg):
+                        st.success("Ruang disimpan.")
             stf = st.text_input("Inisial staff (pisahkan koma)", value=",".join(cfg["staff"]), key="cfg_staff")
             if st.button("Simpan staff", key="cfg_staff_btn"):
                 cfg["staff"] = [x.strip().upper() for x in stf.split(",") if x.strip()] or cfg["staff"]
-                save_cfg(cfg)
-                st.success("Staff disimpan.")
+                if try_save_cfg(cfg):
+                    st.success("Staff disimpan.")
         with st.expander("Backup & restore data"):
-            st.caption("Penyimpanan CSV di Streamlit Cloud bisa hilang saat aplikasi restart/redeploy. Backup rutin (mis. akhir bulan), lalu restore bila perlu.")
-            for label, path, cols, k in (("Suhu & kelembaban", ENTRY_FILE, ECOLS, "th"), ("QC peralatan", QC_FILE, QCOLS, "qc")):
-                st.download_button("⬇️ Backup {} (CSV)".format(label), _read(path, cols).to_csv(index=False).encode("utf-8-sig"),
+            if db_on():
+                st.caption("Data tersimpan permanen di Supabase. Backup CSV tetap berguna sebagai salinan tambahan (mis. akhir bulan).")
+            else:
+                st.caption("PERINGATAN: mode CSV lokal, data bisa hilang saat aplikasi restart. Hubungkan Supabase, dan backup rutin.")
+            for label, table, path, cols, keys, k in (("Suhu & kelembaban", "entries", ENTRY_FILE, ECOLS, ["ruang", "tanggal", "shift"], "th"),
+                                                      ("QC peralatan", "qc_entries", QC_FILE, QCOLS, ["alat", "tanggal"], "qc")):
+                full = load_entries() if k == "th" else load_qc()
+                st.download_button("⬇️ Backup {} (CSV)".format(label), full.to_csv(index=False).encode("utf-8-sig"),
                                    os.path.basename(path), "text/csv", key="bk_" + k)
                 up = st.file_uploader("Restore {}".format(label), type="csv", key="up_" + k)
-                if up is not None and st.button("Restore {} (menimpa data saat ini)".format(label), key="rs_" + k):
+                if up is not None and st.button("Restore {} (MENGGANTI seluruh data saat ini)".format(label), key="rs_" + k):
                     try:
                         new = pd.read_csv(up, dtype=str, encoding="utf-8-sig").fillna("")
                         miss = [c for c in cols if c not in new.columns]
                         if miss:
                             st.error("Kolom tidak lengkap: " + ", ".join(miss))
                         else:
-                            os.makedirs(DATA_DIR, exist_ok=True)
-                            new[cols].to_csv(path, index=False)
-                            st.success("Data {} dipulihkan ({} baris).".format(label, len(new)))
+                            n_rows = replace_table(table, path, new, cols, keys)
+                            st.success("Data {} dipulihkan ({} baris).".format(label, n_rows))
+                    except StorageError as ex:
+                        st.error("Gagal restore: {}".format(ex))
                     except Exception as ex:
                         st.error("Gagal restore: {}".format(ex))
     author_box()
