@@ -123,7 +123,7 @@ _DEVICES = [
 
 # Nama lengkap staff untuk pesan "Sudah diisi oleh ...". Inisial yang belum ada di sini akan ditampilkan apa adanya.
 # Contoh pengisian:  "NR": "Nama Lengkap",
-STAFF_NAMES = {"RF": "Rifqi"}
+STAFF_NAMES = {"RF": "Rifqi", "NR": "Nabilah", "AC": "Calista", "AP": "Alika", "AM": "Achlisum", "HR": "Herdani"}
 
 
 def staff_label(ini):
@@ -133,7 +133,7 @@ def staff_label(ini):
 
 DEFAULT_CFG = {
     "rooms": [dict(nama=n, tekanan=False, t_lo=20.0, t_hi=24.0, h_lo=float(hl), h_hi=float(hh)) for n, hl, hh in _ROOMS],
-    "staff": ["RF", "NR", "AC", "AP", "AM"],
+    "staff": ["RF", "NR", "AC", "AP", "AM", "HR"],
     "devices": _DEVICES,
 }
 
@@ -1481,17 +1481,6 @@ def dash_th():
     st.markdown("<div style='overflow-x:auto'><table class='cal'>{}{}</table></div>".format(head, body), unsafe_allow_html=True)
     st.markdown("<div class='lg2'><span><i class='s-ok'></i>Dalam batas</span><span><i class='s-high'></i>&#9650; Di atas batas</span><span><i class='s-low'></i>&#9660; Di bawah batas</span>"
                 "<span><i class='s-empty'></i>Belum diisi</span></div>", unsafe_allow_html=True)
-
-    hi_days = sorted(set(d for d, _, _ in an["high"]))
-    lo_days = sorted(set(d for d, _, _ in an["low"]))
-    belum = ["{} tanggal {}".format(SHIFT_NAME[s], d) for d in sorted(an["empty_by_day"]) for s in "PSM" if s in an["empty_by_day"][d]]
-    st.markdown("<div class='box'><b>Ringkasan {} - {} {}</b><br>"
-                "&#128308; Tanggal dengan suhu <b>di atas batas</b> ({:g} &deg;C): <b>{}</b><br>"
-                "&#128992; Tanggal dengan suhu di bawah batas ({:g} &deg;C): <b>{}</b><br>"
-                "&#9898; Tanggal yang belum diisi: <b>{}</b></div>".format(
-                    escape(ruang), BLN[m - 1], y, std["t_hi"], days_text(hi_days), std["t_lo"], days_text(lo_days),
-                    ", ".join(belum) if belum else "-"),
-                unsafe_allow_html=True)
 
     data = month_data(ruang, y, m)
     if data:
