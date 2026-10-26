@@ -1208,8 +1208,13 @@ html, body, [class*="css"], .stApp, .stMarkdown, .stButton, .stTextInput,
 .stApp [data-testid="stCaptionContainer"], .stApp [data-testid="stCaptionContainer"] *{color:var(--muted) !important}
 [data-testid="stHeader"]{background:transparent !important}
 .block-container{padding-top:1.4rem;max-width:100%;animation:fadeIn .5s ease both}
-[data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"], [data-testid="stAppDeployButton"],
+[data-testid="stDecoration"], [data-testid="stStatusWidget"], [data-testid="stAppDeployButton"], [data-testid="stToolbarActions"],
 .stAppDeployButton, #MainMenu, footer, [data-testid="stMainMenu"]{display:none !important;visibility:hidden !important}
+/* Toolbar (Share/GitHub/edit) disembunyikan dengan visibility, BUKAN display, supaya tombol pembuka sidebar yang bisa berada di dalamnya tetap bisa ditampilkan */
+[data-testid="stToolbar"]{visibility:hidden !important}
+[data-testid="stExpandSidebarButton"], [data-testid="stExpandSidebarButton"] *, [data-testid="stSidebarCollapsedControl"], [data-testid="stSidebarCollapsedControl"] *{visibility:visible !important}
+/* Layar lebar: sidebar tidak bisa ditutup (tombol "<<" disembunyikan) agar tidak pernah "hilang" */
+@media (min-width: 992px){[data-testid="stSidebarCollapseButton"]{display:none !important}}
 ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#c9d6f5;border-radius:8px}::-webkit-scrollbar-thumb:hover{background:#9db8ff}
 
 /* ---------- animasi ---------- */
